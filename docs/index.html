@@ -260,6 +260,23 @@
         </div>
       </div>
 
+      <!-- Sunrise & Sunset -->
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80 space-y-3">
+        <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider">Sunrise & Sunset</h3>
+        <div class="flex items-center justify-around text-center pt-2">
+          <div>
+            <span class="text-3xl mb-1 block">🌅</span>
+            <span class="text-[10px] font-bold text-slate-400 uppercase block">Sunrise</span>
+            <span id="sunrise-stat" class="text-sm font-extrabold text-slate-800">--:--</span>
+          </div>
+          <div>
+            <span class="text-3xl mb-1 block">🌇</span>
+            <span class="text-[10px] font-bold text-slate-400 uppercase block">Sunset</span>
+            <span id="sunset-stat" class="text-sm font-extrabold text-slate-800">--:--</span>
+          </div>
+        </div>
+      </div>
+
       <!-- 4-Day Outlook -->
       <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80 space-y-3">
         <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider">4-Day Extended Outlook</h3>
@@ -710,12 +727,24 @@
 
     // 3. Weather 24h & 4-Day
     async function loadWeatherData() {
-      const [res24, res4] = await Promise.all([
+      const [res24, res4, resSun] = await Promise.all([
         fetch("https://api-open.data.gov.sg/v2/real-time/api/twenty-four-hr-forecast"),
-        fetch("https://api-open.data.gov.sg/v2/real-time/api/four-day-outlook")
+        fetch("https://api-open.data.gov.sg/v2/real-time/api/four-day-outlook"),
+        fetch("https://api.sunrise-sunset.org/json?lat=1.3521&lng=103.8198&formatted=0").catch(() => null)
       ]);
       const json24 = await res24.json();
       const json4 = await res4.json();
+      
+      if (resSun) {
+        const jsonSun = await resSun.json().catch(() => null);
+        if (jsonSun && jsonSun.status === "OK") {
+          const sunrise = new Date(jsonSun.results.sunrise);
+          const sunset = new Date(jsonSun.results.sunset);
+          const timeOpts = { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Singapore' };
+          document.getElementById('sunrise-stat').textContent = sunrise.toLocaleTimeString('en-SG', timeOpts);
+          document.getElementById('sunset-stat').textContent = sunset.toLocaleTimeString('en-SG', timeOpts);
+        }
+      }
 
       const general = json24.data.records[0].general;
       const forecastText = general.forecast?.text ?? general.forecast ?? "Fair";
