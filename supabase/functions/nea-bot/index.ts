@@ -12,7 +12,7 @@ const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Dashboard URL (Hosted on GitHub Pages)
-const DASHBOARD_URL = Deno.env.get("NEA_DASHBOARD_URL") ?? "https://jasontan89.github.io/calorie-tracker-bot/nea.html";
+const DASHBOARD_URL = Deno.env.get("NEA_DASHBOARD_URL") ?? "https://jasontan89.github.io/nea-bot/";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
