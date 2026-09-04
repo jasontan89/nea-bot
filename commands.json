@@ -1,0 +1,11 @@
+{
+  "commands": [
+    { "command": "start", "description": "🏠 Main Menu & Live Overview" },
+    { "command": "dashboard", "description": "📊 Interactive Singapore Map & App" },
+    { "command": "psi", "description": "🌬️ Real-time PSI & PM2.5 (5 Regions)" },
+    { "command": "forecast", "description": "🌤️ 24-Hour & 4-Day Forecast" },
+    { "command": "nowcast", "description": "📍 2-Hour Town-by-Town Weather" },
+    { "command": "uv", "description": "☀️ Live UV Index Monitor" },
+    { "command": "alerts", "description": "🔔 Manage Alert Subscriptions" }
+  ]
+}

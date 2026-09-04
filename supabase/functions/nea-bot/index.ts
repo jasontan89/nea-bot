@@ -12,21 +12,89 @@ const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Dashboard URL (Hosted on GitHub Pages)
-const DASHBOARD_URL = Deno.env.get("NEA_DASHBOARD_URL") ?? "https://jasontan89.github.io/nea-bot/";
+const DASHBOARD_URL = Deno.env.get("NEA_DASHBOARD_URL") ?? "https://jasontan89.github.io/calorie-tracker-bot/nea.html";
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function getPsiStatus(val: number) {
+  if (val <= 50) return "Good 🟢";
+  if (val <= 100) return "Moderate 🟡";
+  if (val <= 200) return "Unhealthy 🟠";
+  if (val <= 300) return "Very Unhealthy 🔴";
+  return "Hazardous 🟣";
+}
+
+function getUvAdvisory(val: number) {
+  if (val <= 2) return "Low 🟢 (Minimal protection needed)";
+  if (val <= 5) return "Moderate 🟡 (Seek shade during midday)";
+  if (val <= 7) return "High 🟠 (Wear sunglasses, hat, & SPF 30+)";
+  if (val <= 10) return "Very High 🔴 (Extra protection & avoid sun 11am-3pm)";
+  return "Extreme 🟣 (Full protection required, stay indoors if possible)";
+}
+
+function getWeatherEmoji(text: string) {
+  const t = text.toLowerCase();
+  if (t.includes("thunder") || t.includes("lightning")) return "⛈️";
+  if (t.includes("heavy rain")) return "🌧️";
+  if (t.includes("showers") || t.includes("rain")) return "🌦️";
+  if (t.includes("cloudy")) return "☁️";
+  if (t.includes("windy")) return "💨";
+  if (t.includes("night")) return "🌙";
+  return "☀️";
+}
+
+// ── API Fetchers ─────────────────────────────────────────────────────────────
+
+async function fetchPsi() {
+  const res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/psi");
+  const data = await res.json();
+  return data.data.items[0].readings;
+}
+
+async function fetch24hForecast() {
+  const res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/twenty-four-hr-forecast");
+  const data = await res.json();
+  return data.data.records[0];
+}
+
+async function fetch4DayOutlook() {
+  const res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/four-day-outlook");
+  const data = await res.json();
+  return data.data.records[0]?.forecasts ?? [];
+}
+
+async function fetchNowcast() {
+  const res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/two-hr-forecast");
+  const data = await res.json();
+  return data.data.items[0];
+}
+
+async function fetchUv() {
+  const res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/uv");
+  const data = await res.json();
+  return data.data.records[0]?.index ?? [];
+}
+
+// ── Keyboards ────────────────────────────────────────────────────────────────
+
+function getMainMenuKeyboard() {
+  return new InlineKeyboard()
+    .webApp("🗺️ Open Interactive Map & Dashboard", DASHBOARD_URL)
+    .row()
+    .text("🌬️ PSI & PM2.5", "action_psi")
+    .text("🌤️ 24h & 4-Day", "action_forecast")
+    .row()
+    .text("📍 2h Town Weather", "action_nowcast")
+    .text("☀️ UV Index", "action_uv")
+    .row()
+    .text("🔔 Alerts Settings", "action_alerts")
+    .text("🔄 Refresh", "action_refresh");
+}
 
 // ── Commands ─────────────────────────────────────────────────────────────────
 
 bot.command("start", async (ctx) => {
   const name = ctx.from?.first_name ?? "there";
-  const keyboard = new InlineKeyboard()
-    .text("☁️ PSI & Haze", "action_psi").row()
-    .text("🌦️ Weather Forecast", "action_forecast").row()
-    .text("🚨 Manage Alerts", "action_alerts").row()
-    .webApp("📊 Open Dashboard", DASHBOARD_URL);
-
-  await ctx.reply(`Hi ${name}! 👋\n\nI'm the NEA Bot. I provide real-time meteorological data for Singapore.`, {
-    reply_markup: keyboard
-  });
   
   // Register user in DB
   if (ctx.from?.id) {
@@ -36,11 +104,27 @@ bot.command("start", async (ctx) => {
       username: ctx.from.username
     }, { onConflict: 'chat_id' });
   }
+
+  const welcomeText = 
+    `👋 *Welcome to SG Environment Live, ${name}!* 🇸🇬\n\n` +
+    `Your official real-time meteorological companion powered by live *National Environment Agency (data.gov.sg)* APIs.\n\n` +
+    `📌 *Quick Access Features:*\n` +
+    `• 🗺️ *Map Dashboard:* Visual overlay of PSI & weather on Singapore map\n` +
+    `• 🌬️ *Air Quality:* Real-time 24h PSI & PM2.5 across all 5 zones\n` +
+    `• 🌤️ *Forecasts:* 2h town nowcasts, 24h outlook, & 4-day trends\n` +
+    `• ☀️ *UV Monitor:* Hourly UV Index & sun protection guides\n` +
+    `• 🔔 *Alerts:* Automated push alerts for high PSI & heavy rain\n\n` +
+    `👇 *Tap any option below or open the live map:*`;
+
+  await ctx.reply(welcomeText, {
+    parse_mode: "Markdown",
+    reply_markup: getMainMenuKeyboard()
+  });
 });
 
 bot.command("dashboard", async (ctx) => {
-  const keyboard = new InlineKeyboard().webApp("📊 Open Dashboard", DASHBOARD_URL);
-  await ctx.reply("Click the button below to view the visual dashboard:", { reply_markup: keyboard });
+  const keyboard = new InlineKeyboard().webApp("🗺️ Launch Interactive Map", DASHBOARD_URL);
+  await ctx.reply("Explore live air quality and weather radar pins overlaid across Singapore:", { reply_markup: keyboard });
 });
 
 bot.command("psi", async (ctx) => {
@@ -51,22 +135,17 @@ bot.command("forecast", async (ctx) => {
   await handleForecastRequest(ctx);
 });
 
-bot.command("weather", async (ctx) => {
-  await ctx.reply("Weather warnings functionality coming soon.");
+bot.command("nowcast", async (ctx) => {
+  await handleNowcastRequest(ctx);
+});
+
+bot.command("uv", async (ctx) => {
+  await handleUvRequest(ctx);
 });
 
 bot.command("alerts", async (ctx) => {
   await handleAlertsMenu(ctx);
 });
-
-// ── API Fetchers ─────────────────────────────────────────────────────────────
-
-async function fetchPsi() {
-  const res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/psi");
-  const data = await res.json();
-  const latest = data.data.items[0].readings;
-  return latest;
-}
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
 
@@ -75,27 +154,26 @@ async function handlePsiRequest(ctx: any) {
     const readings = await fetchPsi();
     const psi = readings.psi_twenty_four_hourly;
     const pm25 = readings.pm25_twenty_four_hourly;
-
-    const getStatus = (val: number) => {
-      if (val <= 50) return "Good 🟢";
-      if (val <= 100) return "Moderate 🟡";
-      if (val <= 200) return "Unhealthy 🟠";
-      return "Very Unhealthy 🔴";
-    };
-
     const maxPsi = Math.max(psi.central, psi.north, psi.south, psi.east, psi.west);
 
-    const msg = `🌬️ *Singapore 24-hr PSI & PM2.5*\n\n` +
-                `*Overall Status:* ${getStatus(maxPsi)} (Max: ${maxPsi})\n\n` +
-                `📍 *Regional 24-hr PSI:*\n` +
-                `• Central: *${psi.central}* (PM2.5: ${pm25.central} µg/m³)\n` +
-                `• North: *${psi.north}* (PM2.5: ${pm25.north} µg/m³)\n` +
-                `• South: *${psi.south}* (PM2.5: ${pm25.south} µg/m³)\n` +
-                `• East: *${psi.east}* (PM2.5: ${pm25.east} µg/m³)\n` +
-                `• West: *${psi.west}* (PM2.5: ${pm25.west} µg/m³)\n\n` +
-                `_Data provided live by NEA (data.gov.sg)_`;
-    
-    await ctx.reply(msg, { parse_mode: "Markdown" });
+    const msg = 
+      `🌬️ *Singapore 24-Hour PSI & Air Quality*\n\n` +
+      `📊 *Overall Air Quality:* ${getPsiStatus(maxPsi)}\n` +
+      `🔥 *Peak 24h PSI:* *${maxPsi}*\n\n` +
+      `🗺️ *Regional Breakdown (PSI | PM2.5):*\n` +
+      `• 🏛️ *Central:* PSI *${psi.central}* (${getPsiStatus(psi.central)}) | PM2.5: ${pm25.central} µg/m³\n` +
+      `• 🌳 *North:*   PSI *${psi.north}* (${getPsiStatus(psi.north)}) | PM2.5: ${pm25.north} µg/m³\n` +
+      `• 🚢 *South:*   PSI *${psi.south}* (${getPsiStatus(psi.south)}) | PM2.5: ${pm25.south} µg/m³\n` +
+      `• ✈️ *East:*    PSI *${psi.east}* (${getPsiStatus(psi.east)}) | PM2.5: ${pm25.east} µg/m³\n` +
+      `• 🏭 *West:*    PSI *${psi.west}* (${getPsiStatus(psi.west)}) | PM2.5: ${pm25.west} µg/m³\n\n` +
+      `_Live source: NEA (data.gov.sg)_`;
+
+    const kb = new InlineKeyboard()
+      .webApp("🗺️ View on Singapore Map", DASHBOARD_URL)
+      .row()
+      .text("« Back to Menu", "action_menu");
+
+    await ctx.reply(msg, { parse_mode: "Markdown", reply_markup: kb });
   } catch (error) {
     console.error("Error in handlePsiRequest:", error);
     await ctx.reply("Failed to fetch PSI data. Please try again later.");
@@ -104,27 +182,122 @@ async function handlePsiRequest(ctx: any) {
 
 async function handleForecastRequest(ctx: any) {
   try {
-    const res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/twenty-four-hr-forecast");
-    const data = await res.json();
-    const record = data.data.records[0];
-    const general = record.general;
+    const [record24, outlook4] = await Promise.all([fetch24hForecast(), fetch4DayOutlook()]);
+    const general = record24.general;
 
-    const forecastText = general.forecast?.text ?? general.forecast ?? "N/A";
+    const forecastText = general.forecast?.text ?? general.forecast ?? "Fair";
+    const emoji = getWeatherEmoji(forecastText);
     const tempLow = general.temperature?.low ?? "--";
     const tempHigh = general.temperature?.high ?? "--";
     const humLow = general.relativeHumidity?.low ?? "--";
     const humHigh = general.relativeHumidity?.high ?? "--";
+    const windSpeed = general.wind?.speed ? `${general.wind.speed.low}-${general.wind.speed.high} km/h` : "--";
 
-    const msg = `🌤️ *Singapore 24-Hour Weather Forecast*\n\n` +
-                `*Forecast:* ${forecastText}\n` +
-                `🌡️ *Temperature:* ${tempLow}°C - ${tempHigh}°C\n` +
-                `💧 *Relative Humidity:* ${humLow}% - ${humHigh}%\n\n` +
-                `_Data provided live by NEA (data.gov.sg)_`;
-    
-    await ctx.reply(msg, { parse_mode: "Markdown" });
+    let msg = 
+      `🌤️ *Singapore 24-Hour Weather Outlook*\n\n` +
+      `*Forecast:* ${emoji} *${forecastText}*\n` +
+      `🌡️ *Temperature:* ${tempLow}°C - ${tempHigh}°C\n` +
+      `💧 *Humidity:* ${humLow}% - ${humHigh}%\n` +
+      `💨 *Wind:* ${general.wind?.direction ?? ""} ${windSpeed}\n\n`;
+
+    if (outlook4.length > 0) {
+      msg += `📅 *4-Day Weather Forecast:*\n`;
+      for (const day of outlook4) {
+        const dEmoji = getWeatherEmoji(day.forecast?.text ?? "");
+        msg += `• *${day.day}:* ${dEmoji} ${day.forecast?.text ?? "Fair"} (${day.temperature.low}°-${day.temperature.high}°C)\n`;
+      }
+      msg += `\n`;
+    }
+
+    msg += `_Live source: NEA (data.gov.sg)_`;
+
+    const kb = new InlineKeyboard()
+      .webApp("🗺️ View Map Radar", DASHBOARD_URL)
+      .row()
+      .text("« Back to Menu", "action_menu");
+
+    await ctx.reply(msg, { parse_mode: "Markdown", reply_markup: kb });
   } catch (error) {
     console.error("Error in handleForecastRequest:", error);
     await ctx.reply("Failed to fetch forecast data.");
+  }
+}
+
+async function handleNowcastRequest(ctx: any) {
+  try {
+    const nowcast = await fetchNowcast();
+    const period = nowcast.valid_period?.text ?? "Next 2 hours";
+    const forecasts = nowcast.forecasts ?? [];
+
+    // Filter popular/key towns across Singapore
+    const keyTowns = [
+      "Ang Mo Kio", "Bedok", "Bishan", "Bukit Batok", "Changi", 
+      "City", "Clementi", "Jurong East", "Novena", "Pasir Ris", 
+      "Punggol", "Sembawang", "Sentosa", "Tampines", "Woodlands", "Yishun"
+    ];
+
+    const filtered = forecasts.filter((f: any) => keyTowns.includes(f.area));
+
+    let msg = 
+      `📍 *Singapore 2-Hour Town Nowcast*\n` +
+      `⏰ *Valid Period:* ${period}\n\n`;
+
+    for (const f of filtered) {
+      const emoji = getWeatherEmoji(f.forecast);
+      msg += `• *${f.area}:* ${emoji} ${f.forecast}\n`;
+    }
+
+    msg += `\n💡 _Open the interactive map to see all 47 locations islandwide._\n\n`;
+    msg += `_Live source: NEA (data.gov.sg)_`;
+
+    const kb = new InlineKeyboard()
+      .webApp("🗺️ See All 47 Towns on Map", DASHBOARD_URL)
+      .row()
+      .text("« Back to Menu", "action_menu");
+
+    await ctx.reply(msg, { parse_mode: "Markdown", reply_markup: kb });
+  } catch (error) {
+    console.error("Error in handleNowcastRequest:", error);
+    await ctx.reply("Failed to fetch 2-hour nowcast.");
+  }
+}
+
+async function handleUvRequest(ctx: any) {
+  try {
+    const indices = await fetchUv();
+    if (indices.length === 0) {
+      await ctx.reply("UV Index currently unavailable.");
+      return;
+    }
+
+    const current = indices[0];
+    const maxVal = Math.max(...indices.map((i: any) => i.value));
+    const advisory = getUvAdvisory(current.value);
+
+    let msg = 
+      `☀️ *Singapore Live UV Index*\n\n` +
+      `🔆 *Current UV Index:* *${current.value}*\n` +
+      `🛡️ *Sun Safety Level:* ${advisory}\n` +
+      `📈 *Today's Peak UV:* ${maxVal}\n\n` +
+      `🕒 *Recent Hourly Trend:*\n`;
+
+    const recent = indices.slice(0, 5);
+    for (const item of recent) {
+      const timeStr = new Date(item.hour).toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Singapore" });
+      msg += `• ${timeStr}: UV ${item.value}\n`;
+    }
+
+    msg += `\n_Live source: NEA (data.gov.sg)_`;
+
+    const kb = new InlineKeyboard()
+      .webApp("📊 Open Dashboard", DASHBOARD_URL)
+      .row()
+      .text("« Back to Menu", "action_menu");
+
+    await ctx.reply(msg, { parse_mode: "Markdown", reply_markup: kb });
+  } catch (error) {
+    console.error("Error in handleUvRequest:", error);
+    await ctx.reply("Failed to fetch UV Index.");
   }
 }
 
@@ -137,17 +310,49 @@ async function handleAlertsMenu(ctx: any) {
     return;
   }
 
-  const psiStatus = data.psi_alert ? "✅ ON" : "❌ OFF";
-  const rainStatus = data.rain_alert ? "✅ ON" : "❌ OFF";
+  const psiStatus = data.psi_alert ? "✅ Active" : "❌ Disabled";
+  const rainStatus = data.rain_alert ? "✅ Active" : "❌ Disabled";
+
+  const msg = 
+    `🔔 *Push Alert Notifications Settings*\n\n` +
+    `Customize automated warnings sent directly to your Telegram chat:\n\n` +
+    `• 🚨 *Haze Alert (PSI > 100):* ${psiStatus}\n` +
+    `  _Pushes when 24h PSI enters Unhealthy range._\n\n` +
+    `• 🌧️ *Heavy Rain Alert:* ${rainStatus}\n` +
+    `  _Pushes when intense downpours or weather alerts trigger._\n\n` +
+    `Tap below to toggle your alerts:`;
 
   const keyboard = new InlineKeyboard()
-    .text(`Toggle PSI Alerts (${psiStatus})`, "toggle_psi").row()
-    .text(`Toggle Rain Alerts (${rainStatus})`, "toggle_rain");
+    .text(`Haze Alerts: ${psiStatus}`, "toggle_psi").row()
+    .text(`Rain Alerts: ${rainStatus}`, "toggle_rain").row()
+    .text("« Back to Menu", "action_menu");
 
-  await ctx.reply("Manage your push notification alerts:", { reply_markup: keyboard });
+  await ctx.reply(msg, { parse_mode: "Markdown", reply_markup: keyboard });
 }
 
 // ── Callbacks ────────────────────────────────────────────────────────────────
+
+bot.callbackQuery("action_menu", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  const welcomeText = 
+    `🏠 *SG Environment Live — Main Menu*\n\n` +
+    `Select a category below or explore the interactive live map:`;
+  await ctx.editMessageText(welcomeText, {
+    parse_mode: "Markdown",
+    reply_markup: getMainMenuKeyboard()
+  });
+});
+
+bot.callbackQuery("action_refresh", async (ctx) => {
+  await ctx.answerCallbackQuery("Refreshed live data! 🔄");
+  const welcomeText = 
+    `🏠 *SG Environment Live — Main Menu* _(Updated)_\n\n` +
+    `Select a category below or explore the interactive live map:`;
+  await ctx.editMessageText(welcomeText, {
+    parse_mode: "Markdown",
+    reply_markup: getMainMenuKeyboard()
+  });
+});
 
 bot.callbackQuery("action_psi", async (ctx) => {
   await ctx.answerCallbackQuery();
@@ -157,6 +362,16 @@ bot.callbackQuery("action_psi", async (ctx) => {
 bot.callbackQuery("action_forecast", async (ctx) => {
   await ctx.answerCallbackQuery();
   await handleForecastRequest(ctx);
+});
+
+bot.callbackQuery("action_nowcast", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await handleNowcastRequest(ctx);
+});
+
+bot.callbackQuery("action_uv", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await handleUvRequest(ctx);
 });
 
 bot.callbackQuery("action_alerts", async (ctx) => {
@@ -172,9 +387,8 @@ bot.callbackQuery("toggle_psi", async (ctx) => {
   const newState = !data?.psi_alert;
   
   await supabase.from('user_subscriptions').update({ psi_alert: newState }).eq('chat_id', chatId);
-  
-  await ctx.answerCallbackQuery(`PSI Alerts turned ${newState ? "ON" : "OFF"}`);
-  await ctx.editMessageText("PSI alerts updated. Run /alerts to see changes.");
+  await ctx.answerCallbackQuery(`Haze Alerts turned ${newState ? "ON" : "OFF"}`);
+  await handleAlertsMenu(ctx);
 });
 
 bot.callbackQuery("toggle_rain", async (ctx) => {
@@ -185,9 +399,8 @@ bot.callbackQuery("toggle_rain", async (ctx) => {
   const newState = !data?.rain_alert;
   
   await supabase.from('user_subscriptions').update({ rain_alert: newState }).eq('chat_id', chatId);
-  
   await ctx.answerCallbackQuery(`Rain Alerts turned ${newState ? "ON" : "OFF"}`);
-  await ctx.editMessageText("Rain alerts updated. Run /alerts to see changes.");
+  await handleAlertsMenu(ctx);
 });
 
 // ── Serve ─────────────────────────────────────────────────────────────────────
