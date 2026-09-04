@@ -102,6 +102,11 @@
         <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-orange-500"></span> 101-200 Unhealthy</span>
         <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-rose-600"></span> 201+ Very Unhealthy</span>
       </div>
+      <div id="dengue-legend" class="hidden flex items-center justify-between px-2 pt-1 text-[11px] font-medium text-slate-600">
+        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span> High Risk (≥10)</span>
+        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span> Alert (&lt;10)</span>
+        <span id="dengue-cluster-count" class="text-[10px] text-rose-600 font-bold">15 Clusters</span>
+      </div>
       <div id="weather-map-hint" class="hidden text-center text-[11px] text-slate-500 font-medium pt-1">
         💡 Tap any icon on the map to view local town forecast & set as favorite.
       </div>
@@ -120,6 +125,9 @@
       </button>
       <button onclick="setTab('uv')" id="tab-btn-uv" class="tab-pill px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap bg-white text-slate-600 border border-slate-200/80 shadow-xs transition">
         ☀️ UV Index
+      </button>
+      <button onclick="setTab('dengue')" id="tab-btn-dengue" class="tab-pill px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap bg-white text-slate-600 border border-slate-200/80 shadow-xs transition">
+        🦟 Dengue
       </button>
     </div>
 
@@ -318,6 +326,51 @@
       </div>
     </div>
 
+    <!-- TAB 5: DENGUE CLUSTERS -->
+    <div id="tab-content-dengue" class="space-y-3 hidden">
+      <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200/80 space-y-3">
+        <div class="flex justify-between items-start">
+          <div>
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Dengue Clusters</span>
+            <div class="flex items-baseline gap-2 mt-1">
+              <span id="dengue-total-clusters" class="text-5xl font-extrabold text-slate-900">--</span>
+              <span class="text-sm font-semibold text-slate-400">Clusters</span>
+            </div>
+          </div>
+          <span id="dengue-status-badge" class="px-3.5 py-1.5 rounded-full text-xs font-bold bg-rose-100 text-rose-800">
+            Live NEA Data
+          </span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2 pt-1 text-center">
+          <div class="p-3 bg-rose-50 rounded-xl border border-rose-100">
+            <span class="text-[10px] font-bold text-rose-600 uppercase block">High Risk (≥10 Cases)</span>
+            <span id="dengue-high-risk-count" class="text-xl font-black text-rose-700">--</span>
+          </div>
+          <div class="p-3 bg-amber-50 rounded-xl border border-amber-100">
+            <span class="text-[10px] font-bold text-amber-600 uppercase block">Total Cases in Clusters</span>
+            <span id="dengue-total-cases" class="text-xl font-black text-amber-700">--</span>
+          </div>
+        </div>
+
+        <!-- Search box for clusters -->
+        <div class="relative pt-1">
+          <input 
+            type="text" 
+            id="dengue-search-input" 
+            oninput="filterDengueClusters()" 
+            placeholder="🔍 Search street, road, or neighborhood..."
+            class="w-full px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-400 font-medium text-slate-700"
+          />
+        </div>
+
+        <!-- Clusters List Container -->
+        <div class="space-y-2 pt-1" id="dengue-clusters-list">
+          <div class="text-center py-6 text-slate-400 text-xs">Loading active dengue clusters...</div>
+        </div>
+      </div>
+    </div>
+
   </main>
 
   <script>
@@ -419,6 +472,7 @@
       const indicator = document.getElementById('map-layer-indicator');
       const legend = document.getElementById('psi-legend');
       const hint = document.getElementById('weather-map-hint');
+      const dengueLegend = document.getElementById('dengue-legend');
 
       map.removeLayer(psiLayerGroup);
       map.removeLayer(weatherLayerGroup);
@@ -430,6 +484,7 @@
 
       legend.classList.add('hidden');
       hint.classList.add('hidden');
+      if (dengueLegend) dengueLegend.classList.add('hidden');
 
       if (layer === 'psi') {
         map.addLayer(psiLayerGroup);
@@ -448,19 +503,24 @@
         btnDengue.className = "px-2.5 py-1 rounded-lg bg-white text-rose-600 shadow-xs transition";
         indicator.textContent = "Dengue Clusters";
         indicator.className = "text-[11px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full";
+        if (dengueLegend) dengueLegend.classList.remove('hidden');
       }
     }
 
     // ── Tab Switching ───────────────────────────────────────────────────────────
     function setTab(tab) {
       if (tg?.HapticFeedback) tg.HapticFeedback.selectionChanged();
-      const tabs = ['psi', 'towns', 'forecast', 'uv'];
+      const tabs = ['psi', 'towns', 'forecast', 'uv', 'dengue'];
       tabs.forEach(t => {
         const content = document.getElementById(`tab-content-${t}`);
         const btn = document.getElementById(`tab-btn-${t}`);
+        if (!content || !btn) return;
         if (t === tab) {
           content.classList.remove('hidden');
           btn.className = "tab-pill active px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap bg-blue-600 text-white shadow-xs transition";
+          if (t === 'dengue') {
+            switchMapLayer('dengue');
+          }
         } else {
           content.classList.add('hidden');
           btn.className = "tab-pill px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap bg-white text-slate-600 border border-slate-200/80 shadow-xs transition";
@@ -833,10 +893,12 @@
       }
 
       let barsHtml = '';
-      const recent = indices.slice(0, 7);
-      recent.forEach(item => {
+      // Sort chronologically (earliest morning hour to latest evening hour, so AM hours come first)
+      const chronological = [...indices].sort((a, b) => new Date(a.hour).getTime() - new Date(b.hour).getTime());
+
+      chronological.forEach(item => {
         const time = new Date(item.hour).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Singapore' });
-        const pct = Math.min(100, Math.round((item.value / 12) * 100));
+        const pct = Math.min(100, Math.max(6, Math.round((item.value / 12) * 100)));
         let barColor = 'bg-emerald-500';
         if (item.value > 2) barColor = 'bg-amber-400';
         if (item.value > 5) barColor = 'bg-orange-500';
@@ -844,9 +906,9 @@
 
         barsHtml += `
           <div class="flex items-center gap-3 text-xs font-medium">
-            <span class="w-16 text-slate-400 shrink-0">${time}</span>
+            <span class="w-16 text-slate-400 shrink-0 text-[11px]">${time}</span>
             <div class="w-full bg-slate-100 h-3 rounded-full overflow-hidden">
-              <div class="${barColor} h-full rounded-full transition-all duration-500" style="width: ${pct}%"></div>
+              <div class="${barColor} h-full rounded-full transition-all duration-500" style="width: ${item.value === 0 ? '4%' : pct + '%'}"></div>
             </div>
             <span class="w-8 text-right font-bold text-slate-700">${item.value}</span>
           </div>
@@ -855,8 +917,9 @@
       document.getElementById('uv-hourly-bars').innerHTML = barsHtml;
     }
 
-    // ── Boot ────────────────────────────────────────────────────────────────────
-    // 5. Dengue Clusters
+    // ── Dengue Clusters ─────────────────────────────────────────────────────────
+    let globalDengueClusters = [];
+
     async function loadDengueData() {
       try {
         const res = await fetch("https://blcsjvifiytbznwesmyx.supabase.co/functions/v1/nea-dengue");
@@ -864,38 +927,162 @@
         const geoJson = await res.json();
         dengueLayerGroup.clearLayers();
 
-        if (geoJson.features) {
-          L.geoJSON(geoJson, {
-            style: function (feature) {
-              const cases = feature.properties.CASE_SIZE || 0;
-              const color = cases > 10 ? '#ef4444' : '#f59e0b';
-              return {
-                color: color,
-                weight: 2,
-                fillColor: color,
-                fillOpacity: 0.4
-              };
-            },
-            onEachFeature: function (feature, layer) {
-              if (feature.properties) {
-                const cases = feature.properties.CASE_SIZE || 0;
-                const locality = feature.properties.LOCALITY || 'Unknown Cluster';
-                layer.bindPopup(`
-                  <div class="p-1">
-                    <h4 class="font-bold text-sm text-rose-700">🦟 Dengue Cluster</h4>
-                    <p class="text-xs text-slate-800 font-medium my-1">${locality}</p>
-                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${cases > 10 ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}">
-                      ${cases} active cases
-                    </span>
-                  </div>
-                `);
-              }
+        const features = geoJson.features || [];
+        globalDengueClusters = features;
+
+        let totalCases = 0;
+        let highRiskCount = 0;
+
+        features.forEach(feature => {
+          const props = feature.properties || {};
+          const cases = props.case_size ?? props.CASE_SIZE ?? 0;
+          const locality = props.locality || props.LOCALITY || props.description || 'Dengue Cluster';
+          const isHighRisk = cases >= 10;
+          if (isHighRisk) highRiskCount++;
+          totalCases += cases;
+
+          const color = isHighRisk ? '#ef4444' : '#f59e0b';
+
+          const popupContent = `
+            <div class="p-2 space-y-1.5 max-w-[240px]">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-black uppercase ${isHighRisk ? 'text-rose-600' : 'text-amber-600'}">
+                  ${isHighRisk ? '🚨 High Risk (Red)' : '⚠️ Alert (Yellow)'}
+                </span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-black text-white ${isHighRisk ? 'bg-rose-600' : 'bg-amber-500'}">
+                  ${cases} Cases
+                </span>
+              </div>
+              <p class="text-xs font-bold text-slate-800 leading-snug">${locality}</p>
+              ${props.homes ? `<p class="text-[10px] text-slate-600">🏠 <strong>Homes:</strong> ${props.homes}</p>` : ''}
+              ${props.public_places ? `<p class="text-[10px] text-slate-600">🌳 <strong>Public:</strong> ${props.public_places}</p>` : ''}
+              ${props.construction_sites ? `<p class="text-[10px] text-slate-600">🏗️ <strong>Sites:</strong> ${props.construction_sites}</p>` : ''}
+            </div>
+          `;
+
+          // 1. Draw polygon boundary
+          const poly = L.geoJSON(feature, {
+            style: {
+              color: color,
+              weight: 2.5,
+              fillColor: color,
+              fillOpacity: 0.35
             }
           }).addTo(dengueLayerGroup);
-        }
+          poly.bindPopup(popupContent);
+
+          // 2. Add centroid marker badge
+          try {
+            const bounds = poly.getBounds();
+            if (bounds && bounds.isValid()) {
+              const center = bounds.getCenter();
+              const badgeIcon = L.divIcon({
+                className: '',
+                html: `<div class="shadow-md rounded-full px-2 py-0.5 text-[10px] font-black text-white flex items-center gap-0.5 border-2 border-white cursor-pointer hover:scale-110 transition" style="background-color: ${color}; transform: translate(-50%, -50%);">
+                  <span>🦟</span><span>${cases}</span>
+                </div>`,
+                iconSize: [0, 0]
+              });
+              const pin = L.marker(center, { icon: badgeIcon }).addTo(dengueLayerGroup);
+              pin.bindPopup(popupContent);
+            }
+          } catch (e) {
+            console.warn("Centroid computation error:", e);
+          }
+        });
+
+        // Update UI counters
+        const totalEl = document.getElementById('dengue-total-clusters');
+        if (totalEl) totalEl.textContent = features.length;
+        const highRiskEl = document.getElementById('dengue-high-risk-count');
+        if (highRiskEl) highRiskEl.textContent = highRiskCount;
+        const totalCasesEl = document.getElementById('dengue-total-cases');
+        if (totalCasesEl) totalCasesEl.textContent = totalCases;
+        const tabBtn = document.getElementById('tab-btn-dengue');
+        if (tabBtn) tabBtn.textContent = `🦟 Dengue (${features.length})`;
+        const legendCount = document.getElementById('dengue-cluster-count');
+        if (legendCount) legendCount.textContent = `${features.length} Clusters`;
+
+        renderDengueClustersList(features);
       } catch (err) {
         console.error("Dengue fetch error:", err);
       }
+    }
+
+    function renderDengueClustersList(clusters) {
+      const container = document.getElementById('dengue-clusters-list');
+      if (!container) return;
+
+      if (!clusters || clusters.length === 0) {
+        container.innerHTML = '<div class="text-center py-6 text-slate-400 text-xs">No dengue clusters match your query.</div>';
+        return;
+      }
+
+      // Sort by case count descending
+      const sorted = [...clusters].sort((a, b) => {
+        const ca = a.properties?.case_size ?? 0;
+        const cb = b.properties?.case_size ?? 0;
+        return cb - ca;
+      });
+
+      let html = '';
+      sorted.forEach(c => {
+        const props = c.properties || {};
+        const cases = props.case_size || 0;
+        const isHigh = cases >= 10;
+        const locality = props.locality || 'Dengue Cluster';
+
+        html += `
+          <div class="p-3 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-100 transition space-y-1.5">
+            <div class="flex items-start justify-between gap-2">
+              <span class="text-xs font-bold text-slate-800 leading-snug flex-1">${locality}</span>
+              <span class="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-extrabold text-white ${isHigh ? 'bg-rose-600' : 'bg-amber-500'}">
+                ${cases} cases
+              </span>
+            </div>
+            <div class="flex items-center justify-between pt-1 border-t border-slate-200/60 text-[10px] text-slate-500">
+              <span>${isHigh ? '🔴 High Risk Cluster' : '🟡 Surveillance Area'}</span>
+              <button onclick="focusDengueCluster('${locality.replace(/'/g, "\\'")}')" class="text-rose-600 font-bold hover:underline flex items-center gap-0.5">
+                <span>📍 View on Map</span>
+              </button>
+            </div>
+          </div>
+        `;
+      });
+
+      container.innerHTML = html;
+    }
+
+    function filterDengueClusters() {
+      const query = (document.getElementById('dengue-search-input')?.value || '').toLowerCase().trim();
+      if (!query) {
+        renderDengueClustersList(globalDengueClusters);
+        return;
+      }
+      const filtered = globalDengueClusters.filter(c => {
+        const loc = (c.properties?.locality || '').toLowerCase();
+        return loc.includes(query);
+      });
+      renderDengueClustersList(filtered);
+    }
+
+    function focusDengueCluster(localityName) {
+      switchMapLayer('dengue');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      dengueLayerGroup.eachLayer(layer => {
+        if (layer.getPopup) {
+          const popup = layer.getPopup();
+          if (popup && popup.getContent() && popup.getContent().includes(localityName)) {
+            if (layer.getBounds) {
+              map.fitBounds(layer.getBounds(), { maxZoom: 14, padding: [40, 40] });
+            } else if (layer.getLatLng) {
+              map.setView(layer.getLatLng(), 14);
+            }
+            setTimeout(() => layer.openPopup(), 400);
+          }
+        }
+      });
     }
 
     window.addEventListener('DOMContentLoaded', () => {

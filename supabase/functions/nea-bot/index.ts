@@ -279,10 +279,11 @@ async function handleUvRequest(ctx: any) {
       `🔆 *Current UV Index:* *${current.value}*\n` +
       `🛡️ *Sun Safety Level:* ${advisory}\n` +
       `📈 *Today's Peak UV:* ${maxVal}\n\n` +
-      `🕒 *Recent Hourly Trend:*\n`;
+      `🕒 *Today's Hourly Trend (Chronological):*\n`;
 
-    const recent = indices.slice(0, 5);
-    for (const item of recent) {
+    // Sort chronologically (earliest AM morning hour to latest PM hour)
+    const chronological = [...indices].sort((a: any, b: any) => new Date(a.hour).getTime() - new Date(b.hour).getTime());
+    for (const item of chronological) {
       const timeStr = new Date(item.hour).toLocaleTimeString("en-SG", { hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Singapore" });
       msg += `• ${timeStr}: UV ${item.value}\n`;
     }

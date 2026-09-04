@@ -11,33 +11,49 @@ serve(async (req) => {
   }
 
   try {
-    const DATA_GOV_KEY = "v2:4d2c5238dd16197b7f066e3c4999fc3fc5cdfcbfb3e0be5cad586af628ff4fc2:ttHTkdKyQKno_OAXVNtR2Bor1R3ya0HC";
-    if (!DATA_GOV_KEY) {
-      throw new Error("Missing DATA_GOV_API_KEY environment variable");
+    const res = await fetch("https://www.nea.gov.sg/api/OneMap/GetMapData/DENGUE_CLUSTER", {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept": "application/json"
+      }
+    });
+
+    if (!res.ok) {
+      throw new Error(`NEA OneMap returned status ${res.status}`);
     }
 
-    const headers = {
-      "x-api-key": DATA_GOV_KEY
+    const raw = await res.text();
+    const data = JSON.parse(JSON.parse(raw));
+    const results = data.SrchResults || [];
+    const metadata = results[0] || {};
+    const clusters = results.slice(1);
+
+    const features = [];
+    for (const c of clusters) {
+      const gj = c.GeoJSON;
+      if (gj && gj.geometry) {
+        features.push({
+          type: "Feature",
+          geometry: gj.geometry,
+          properties: {
+            name: c.NAME || "Dengue_Cluster",
+            locality: c.DESCRIPTION || "Dengue Cluster",
+            case_size: parseInt(c.CASE_SIZE || "0", 10),
+            homes: c.HOMES || "",
+            public_places: c.PUBLIC_PLACES || "",
+            construction_sites: c.CONSTRUCTION_SITES || ""
+          }
+        });
+      }
+    }
+
+    const featureCollection = {
+      type: "FeatureCollection",
+      metadata: metadata,
+      features: features
     };
 
-    const datasetId = "d_dbfabf16158d1b0e1c420627c0819168";
-    const pollUrl = `https://api-production.data.gov.sg/v2/public/api/datasets/${datasetId}/poll-download`;
-    
-    let res = await fetch(pollUrl, { headers });
-    let json = await res.json();
-    
-    if (json.code !== 0 && json.code !== 200 && !json.data?.url) {
-      return new Response(JSON.stringify({ error: "Failed to poll data.gov.sg", details: json }), {
-        status: 500,
-        headers: { ...corsHeaders, "Content-Type": "application/json" }
-      });
-    }
-
-    const downloadUrl = json.data.url;
-    const geoRes = await fetch(downloadUrl);
-    const geoJson = await geoRes.json();
-
-    return new Response(JSON.stringify(geoJson), {
+    return new Response(JSON.stringify(featureCollection), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
