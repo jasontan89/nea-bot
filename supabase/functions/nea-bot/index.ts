@@ -325,12 +325,25 @@ async function handleAlertsMenu(ctx: any) {
   const keyboard = new InlineKeyboard()
     .text(`Haze Alerts: ${psiStatus}`, "toggle_psi").row()
     .text(`Rain Alerts: ${rainStatus}`, "toggle_rain").row()
+    .text("🧪 Send Test Alert", "action_test_alert").row()
     .text("« Back to Menu", "action_menu");
 
   await ctx.reply(msg, { parse_mode: "Markdown", reply_markup: keyboard });
 }
 
 // ── Callbacks ────────────────────────────────────────────────────────────────
+
+bot.callbackQuery("action_test_alert", async (ctx) => {
+  await ctx.answerCallbackQuery("Dispatching test alert... 🚨");
+  const testMsg = 
+    `🚨 *[TEST ALERT] Singapore Meteorological Warning*\n\n` +
+    `This is a test notification confirming your Telegram alert delivery works!\n\n` +
+    `• 🌬️ *Haze Watch:* Automated alerts trigger when 24h PSI > 100 (Unhealthy).\n` +
+    `• 🌧️ *Rain Watch:* Automated alerts trigger when heavy rain or thundery showers are detected across SG towns.\n` +
+    `• ⏰ *Check Frequency:* Scanned automatically every hour via Supabase.\n\n` +
+    `✅ *Delivery Status:* Perfect! You will receive live warnings here whenever thresholds are breached.`;
+  await ctx.reply(testMsg, { parse_mode: "Markdown" });
+});
 
 bot.callbackQuery("action_menu", async (ctx) => {
   await ctx.answerCallbackQuery();
