@@ -64,7 +64,7 @@ bot.command("alerts", async (ctx) => {
 async function fetchPsi() {
   const res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/psi");
   const data = await res.json();
-  const latest = data.data.readings[0];
+  const latest = data.data.items[0].readings;
   return latest;
 }
 
@@ -72,24 +72,32 @@ async function fetchPsi() {
 
 async function handlePsiRequest(ctx: any) {
   try {
-    const psiData = await fetchPsi();
-    const pm25 = psiData.pm25_twenty_four_hourly.national;
-    const psi = psiData.psi_twenty_four_hourly.national;
-    
-    let status = "Good";
-    if (psi > 50) status = "Moderate";
-    if (psi > 100) status = "Unhealthy";
-    if (psi > 200) status = "Very Unhealthy";
-    if (psi > 300) status = "Hazardous";
+    const readings = await fetchPsi();
+    const psi = readings.psi_twenty_four_hourly;
+    const pm25 = readings.pm25_twenty_four_hourly;
 
-    const msg = `**Current Air Quality (National)**\n\n` +
-                `🌬️ **PSI (24h):** ${psi} (${status})\n` +
-                `🌫️ **PM2.5 (24h):** ${pm25} µg/m³\n\n` +
-                `*Data from data.gov.sg*`;
+    const getStatus = (val: number) => {
+      if (val <= 50) return "Good 🟢";
+      if (val <= 100) return "Moderate 🟡";
+      if (val <= 200) return "Unhealthy 🟠";
+      return "Very Unhealthy 🔴";
+    };
+
+    const maxPsi = Math.max(psi.central, psi.north, psi.south, psi.east, psi.west);
+
+    const msg = `🌬️ *Singapore 24-hr PSI & PM2.5*\n\n` +
+                `*Overall Status:* ${getStatus(maxPsi)} (Max: ${maxPsi})\n\n` +
+                `📍 *Regional 24-hr PSI:*\n` +
+                `• Central: *${psi.central}* (PM2.5: ${pm25.central} µg/m³)\n` +
+                `• North: *${psi.north}* (PM2.5: ${pm25.north} µg/m³)\n` +
+                `• South: *${psi.south}* (PM2.5: ${pm25.south} µg/m³)\n` +
+                `• East: *${psi.east}* (PM2.5: ${pm25.east} µg/m³)\n` +
+                `• West: *${psi.west}* (PM2.5: ${pm25.west} µg/m³)\n\n` +
+                `_Data provided live by NEA (data.gov.sg)_`;
     
     await ctx.reply(msg, { parse_mode: "Markdown" });
   } catch (error) {
-    console.error(error);
+    console.error("Error in handlePsiRequest:", error);
     await ctx.reply("Failed to fetch PSI data. Please try again later.");
   }
 }
@@ -98,18 +106,24 @@ async function handleForecastRequest(ctx: any) {
   try {
     const res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/twenty-four-hr-forecast");
     const data = await res.json();
-    const forecast = data.data.records[0];
-    const general = forecast.general;
+    const record = data.data.records[0];
+    const general = record.general;
 
-    const msg = `**24-Hour Weather Forecast**\n\n` +
-                `🌤️ **Forecast:** ${general.forecast}\n` +
-                `🌡️ **Temperature:** ${general.temperature.low}°C - ${general.temperature.high}°C\n` +
-                `💧 **Humidity:** ${general.relative_humidity.low}% - ${general.relative_humidity.high}%\n\n` +
-                `*Data from data.gov.sg*`;
+    const forecastText = general.forecast?.text ?? general.forecast ?? "N/A";
+    const tempLow = general.temperature?.low ?? "--";
+    const tempHigh = general.temperature?.high ?? "--";
+    const humLow = general.relativeHumidity?.low ?? "--";
+    const humHigh = general.relativeHumidity?.high ?? "--";
+
+    const msg = `🌤️ *Singapore 24-Hour Weather Forecast*\n\n` +
+                `*Forecast:* ${forecastText}\n` +
+                `🌡️ *Temperature:* ${tempLow}°C - ${tempHigh}°C\n` +
+                `💧 *Relative Humidity:* ${humLow}% - ${humHigh}%\n\n` +
+                `_Data provided live by NEA (data.gov.sg)_`;
     
     await ctx.reply(msg, { parse_mode: "Markdown" });
   } catch (error) {
-    console.error(error);
+    console.error("Error in handleForecastRequest:", error);
     await ctx.reply("Failed to fetch forecast data.");
   }
 }

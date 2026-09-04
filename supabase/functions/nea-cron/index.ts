@@ -14,7 +14,8 @@ Deno.serve(async (req) => {
     // 1. Fetch PSI Data
     const psiRes = await fetch("https://api-open.data.gov.sg/v2/real-time/api/psi");
     const psiData = await psiRes.json();
-    const psi = psiData.data.readings[0].psi_twenty_four_hourly.national;
+    const readings = psiData.data.items[0].readings.psi_twenty_four_hourly;
+    const psi = Math.max(readings.central, readings.north, readings.south, readings.east, readings.west);
     
     // We only send alerts if PSI > 100 (Unhealthy)
     if (psi > 100) {
