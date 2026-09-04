@@ -1,4 +1,4 @@
-﻿import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -11,7 +11,7 @@ serve(async (req) => {
   }
 
   try {
-    const DATA_GOV_KEY = Deno.env.get("DATA_GOV_API_KEY");
+    const DATA_GOV_KEY = "v2:4d2c5238dd16197b7f066e3c4999fc3fc5cdfcbfb3e0be5cad586af628ff4fc2:ttHTkdKyQKno_OAXVNtR2Bor1R3ya0HC";
     if (!DATA_GOV_KEY) {
       throw new Error("Missing DATA_GOV_API_KEY environment variable");
     }
@@ -21,7 +21,7 @@ serve(async (req) => {
     };
 
     const datasetId = "d_dbfabf16158d1b0e1c420627c0819168";
-    const pollUrl = "https://api-production.data.gov.sg/v2/public/api/datasets/$datasetId/poll-download";
+    const pollUrl = `https://api-production.data.gov.sg/v2/public/api/datasets/${datasetId}/poll-download`;
     
     let res = await fetch(pollUrl, { headers });
     let json = await res.json();
