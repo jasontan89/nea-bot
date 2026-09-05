@@ -46,6 +46,18 @@
     }
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    @keyframes rain-pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(14, 165, 233, 0.7); }
+      70% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(14, 165, 233, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(14, 165, 233, 0); }
+    }
+    .rain-beacon {
+      animation: rain-pulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+    }
+    .custom-rain-pin {
+      background: transparent;
+      border: none;
+    }
   </style>
 </head>
 <body class="bg-slate-100 text-slate-800 antialiased min-h-screen pb-12">
@@ -110,12 +122,22 @@
         <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-amber-400 border border-slate-700 shadow-xs"></span> Alert (&lt;10)</span>
         <span id="dengue-cluster-count" class="text-[11px] text-rose-700 font-black">-- Clusters</span>
       </div>
-      <div id="rainfall-legend" class="hidden flex items-center justify-between px-2 pt-1 text-[11px] font-semibold text-slate-700">
-        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-slate-400"></span> 0mm Dry</span>
-        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-cyan-500"></span> &lt;5mm</span>
-        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span> 5-20mm</span>
-        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-purple-600"></span> &gt;20mm Heavy</span>
-        <span id="rainfall-stations-count" class="text-[10px] text-blue-700 font-extrabold">88 Sensors</span>
+      <div id="rainfall-legend" class="hidden space-y-2 px-1 pt-1">
+        <div id="rainfall-status-banner" class="flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-semibold text-slate-700">
+          <div class="flex items-center gap-1.5">
+            <span id="rainfall-status-icon">☀️</span>
+            <span id="rainfall-status-text">All 88 Stations Dry — Clear Islandwide</span>
+          </div>
+          <button id="btn-rain-filter" onclick="toggleRainFilter()" class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 shadow-2xs transition">
+            👁️ All 88
+          </button>
+        </div>
+        <div class="flex items-center justify-between px-2 text-[11px] font-semibold text-slate-600">
+          <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-slate-400/40"></span> Dry</span>
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-sky-500"></span> &lt;5mm Light</span>
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span> 5-20mm Mod</span>
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-purple-600"></span> &gt;20mm Heavy</span>
+        </div>
       </div>
       <div id="weather-map-hint" class="hidden text-center text-[11px] text-slate-500 font-medium pt-1">
         💡 Tap any icon on the map to view local town forecast & set as favorite.
@@ -1133,132 +1155,263 @@
     }
 
     // 6. Rainfall Stations Network (88 Stations)
+    let showOnlyRaining = false;
+    let cachedRainfallStations = [];
+    let cachedRainfallReadings = {};
+
+    function toggleRainFilter() {
+      showOnlyRaining = !showOnlyRaining;
+      const btn = document.getElementById('btn-rain-filter');
+      if (btn) {
+        btn.textContent = showOnlyRaining ? "⚡ Rain Only" : "👁️ All 88";
+        btn.className = showOnlyRaining 
+          ? "text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-600 border border-blue-700 text-white shadow-xs transition"
+          : "text-[10px] font-bold px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-slate-100 shadow-2xs transition";
+      }
+      renderRainfallMarkers();
+    }
+
+    function renderRainfallMarkers() {
+      rainfallLayerGroup.clearLayers();
+      let rainingCount = 0;
+      let maxRain = 0;
+      let maxStation = "";
+
+      cachedRainfallStations.forEach(st => {
+        const lat = st.location?.latitude;
+        const lng = st.location?.longitude;
+        if (!lat || !lng) return;
+
+        const val = cachedRainfallReadings[st.id] ?? 0;
+        if (val > 0) {
+          rainingCount++;
+          if (val > maxRain) {
+            maxRain = val;
+            maxStation = st.name;
+          }
+        }
+
+        if (val === 0) {
+          if (!showOnlyRaining) {
+            // Elegant, clean micro-dot for dry stations (avoids visual clutter)
+            const circle = L.circleMarker([lat, lng], {
+              radius: 2,
+              color: '#64748b',
+              weight: 0,
+              fillColor: '#64748b',
+              fillOpacity: 0.22
+            }).addTo(rainfallLayerGroup);
+
+            circle.bindPopup(`
+              <div class="p-2 space-y-1 max-w-[200px] text-xs">
+                <div class="flex items-center gap-1.5 font-bold text-slate-800">
+                  <span>☀️</span> <span>${st.name}</span>
+                </div>
+                <p class="text-slate-500 font-medium">Dry / No Precipitation</p>
+                <div class="pt-0.5">
+                  <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">0.0 mm / 5-min</span>
+                </div>
+              </div>
+            `);
+          }
+        } else {
+          // Vibrant eye-catching beacon for raining stations
+          const isHeavy = val > 20;
+          const isMod = val > 5 && val <= 20;
+          const bgGrad = isHeavy 
+            ? 'from-purple-600 to-indigo-700 shadow-purple-500/50' 
+            : isMod 
+              ? 'from-blue-600 to-cyan-600 shadow-blue-500/50' 
+              : 'from-sky-500 to-blue-500 shadow-sky-400/40';
+
+          const icon = L.divIcon({
+            className: 'custom-rain-pin',
+            html: `
+              <div class="relative -top-3 -left-3">
+                <div class="rain-beacon flex items-center justify-center w-7 h-7 rounded-full bg-gradient-to-tr ${bgGrad} text-white shadow-lg border-2 border-white cursor-pointer transition-transform hover:scale-110">
+                  <span class="text-xs">💧</span>
+                </div>
+                <div class="absolute top-7 left-1/2 -translate-x-1/2 whitespace-nowrap bg-slate-900/90 text-white text-[10px] font-black px-1.5 py-0.5 rounded-md shadow-md pointer-events-none">
+                  ${val.toFixed(1)}mm
+                </div>
+              </div>
+            `,
+            iconSize: [28, 28]
+          });
+
+          const marker = L.marker([lat, lng], { icon }).addTo(rainfallLayerGroup);
+          marker.bindPopup(`
+            <div class="p-2 space-y-1.5 max-w-[210px] text-xs">
+              <div class="flex items-center gap-1.5 font-bold text-slate-800">
+                <span class="text-sm">🌧️</span> <span>${st.name}</span>
+              </div>
+              <p class="text-blue-600 font-bold">${isHeavy ? 'Heavy Downpour ⛈️' : isMod ? 'Moderate Rain 🌧️' : 'Light Showers 🌦️'}</p>
+              <div>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-800">
+                  ${val.toFixed(1)} mm (Last 5 mins)
+                </span>
+              </div>
+            </div>
+          `);
+        }
+      });
+
+      // Update status banner
+      const banner = document.getElementById('rainfall-status-banner');
+      const icon = document.getElementById('rainfall-status-icon');
+      const text = document.getElementById('rainfall-status-text');
+
+      if (banner && text && icon) {
+        if (rainingCount === 0) {
+          icon.textContent = "☀️";
+          text.textContent = "All 88 Stations Dry — Clear Islandwide";
+          banner.className = "flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs font-semibold text-slate-700";
+        } else {
+          icon.textContent = "🌧️";
+          text.textContent = `Raining at ${rainingCount} stations • Max: ${maxRain.toFixed(1)} mm (${maxStation})`;
+          banner.className = "flex items-center justify-between px-3 py-1.5 rounded-xl bg-blue-50 border border-blue-200 text-xs font-bold text-blue-800";
+        }
+      }
+    }
+
     async function loadRainfallData() {
       try {
         const res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/rainfall");
         if (!res.ok) return;
         const json = await res.json();
-        const stations = json.data?.stations || [];
+        cachedRainfallStations = json.data?.stations || [];
         const readings = json.data?.readings?.[0]?.data || [];
 
-        const readingMap = {};
+        cachedRainfallReadings = {};
         readings.forEach(r => {
-          readingMap[r.stationId] = r.value ?? 0;
+          cachedRainfallReadings[r.stationId] = r.value ?? 0;
         });
 
-        rainfallLayerGroup.clearLayers();
-        let rainingCount = 0;
-
-        stations.forEach(st => {
-          const lat = st.location?.latitude;
-          const lng = st.location?.longitude;
-          if (!lat || !lng) return;
-
-          const val = readingMap[st.id] ?? 0;
-          if (val > 0) rainingCount++;
-
-          let color = '#94a3b8'; // dry
-          let fillColor = '#cbd5e1';
-          let radius = 6;
-          let statusText = 'Dry / No Rain ☀️';
-
-          if (val > 0 && val <= 5) {
-            color = '#0284c7';
-            fillColor = '#38bdf8';
-            radius = 8;
-            statusText = 'Light Rain 🌦️';
-          } else if (val > 5 && val <= 20) {
-            color = '#1d4ed8';
-            fillColor = '#2563eb';
-            radius = 10;
-            statusText = 'Moderate Rain 🌧️';
-          } else if (val > 20) {
-            color = '#7e22ce';
-            fillColor = '#a855f7';
-            radius = 12;
-            statusText = 'Heavy Downpour ⛈️';
-          }
-
-          const circle = L.circleMarker([lat, lng], {
-            radius: radius,
-            color: color,
-            weight: 2,
-            fillColor: fillColor,
-            fillOpacity: val > 0 ? 0.85 : 0.45
-          }).addTo(rainfallLayerGroup);
-
-          circle.bindPopup(`
-            <div class="p-2 space-y-1 max-w-[210px]">
-              <div class="flex items-center gap-1.5">
-                <span class="text-sm">🌧️</span>
-                <h4 class="font-bold text-xs text-slate-800 leading-snug">${st.name}</h4>
-              </div>
-              <p class="text-xs font-semibold text-slate-600">${statusText}</p>
-              <div class="pt-1">
-                <span class="px-2 py-0.5 rounded-full text-[10px] font-black ${val > 0 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'}">
-                  ${val.toFixed(1)} mm / 5-min
-                </span>
-              </div>
-            </div>
-          `);
-        });
-
-        const countEl = document.getElementById('rainfall-stations-count');
-        if (countEl) {
-          countEl.textContent = `${rainingCount} Raining (${stations.length} Sensors)`;
-        }
+        renderRainfallMarkers();
       } catch (err) {
         console.error("Rainfall fetch error:", err);
       }
     }
 
     // 7. Singapore Tide Timings (Marine)
+    const TIDES_FALLBACK = [
+      {"date":"2026-09-04T03:50:00.000+08:00","height":2.3,"classification":"H"},
+      {"date":"2026-09-04T09:18:00.000+08:00","height":1.3,"classification":"L"},
+      {"date":"2026-09-04T15:09:00.000+08:00","height":2.7,"classification":"H"},
+      {"date":"2026-09-04T22:18:00.000+08:00","height":0.5,"classification":"L"},
+      {"date":"2026-09-05T05:18:00.000+08:00","height":2.1,"classification":"H"},
+      {"date":"2026-09-05T10:09:00.000+08:00","height":1.6,"classification":"L"},
+      {"date":"2026-09-05T16:00:00.000+08:00","height":2.5,"classification":"H"},
+      {"date":"2026-09-05T23:37:00.000+08:00","height":0.5,"classification":"L"},
+      {"date":"2026-09-06T07:48:00.000+08:00","height":2.0,"classification":"H"},
+      {"date":"2026-09-06T11:35:00.000+08:00","height":1.8,"classification":"L"},
+      {"date":"2026-09-06T17:20:00.000+08:00","height":2.4,"classification":"H"},
+      {"date":"2026-09-07T01:13:00.000+08:00","height":0.6,"classification":"L"},
+      {"date":"2026-09-07T09:24:00.000+08:00","height":2.2,"classification":"H"},
+      {"date":"2026-09-07T13:52:00.000+08:00","height":1.8,"classification":"L"},
+      {"date":"2026-09-07T19:26:00.000+08:00","height":2.4,"classification":"H"}
+    ];
+
     async function loadTidesData() {
+      const container = document.getElementById('tides-container');
+      const nextBadge = document.getElementById('next-tide-badge');
+      
       try {
-        const res = await fetch("https://vincentneo.github.io/SGTideTimings/latest.json");
-        if (!res.ok) return;
-        const data = await res.json();
-        
+        let data = null;
+
+        // 1. Same-origin fetch from docs/data/tides.json (100% immune to CORS)
+        try {
+          const localRes = await fetch('data/tides.json?v=' + Date.now());
+          if (localRes.ok) {
+            data = await localRes.json();
+          }
+        } catch (e) {
+          console.warn('Local tides fetch failed, trying fallbacks:', e);
+        }
+
+        // 2. GitHub Raw CDN with CORS
+        if (!data || !Array.isArray(data) || data.length === 0) {
+          try {
+            const rawRes = await fetch('https://raw.githubusercontent.com/jasontan89/nea-bot/main/docs/data/tides.json');
+            if (rawRes.ok) {
+              data = await rawRes.json();
+            }
+          } catch (e) {
+            console.warn('Raw tides fetch failed:', e);
+          }
+        }
+
+        // 3. Embedded backup
+        if (!data || !Array.isArray(data) || data.length === 0) {
+          data = TIDES_FALLBACK;
+        }
+
+        if (!data || data.length === 0) {
+          if (nextBadge) {
+            nextBadge.textContent = "Data Unavailable";
+            nextBadge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200";
+          }
+          if (container) {
+            container.innerHTML = '<div class="text-center py-4 text-slate-400 text-xs col-span-full">Tidal predictions currently unavailable. Tap Refresh to retry.</div>';
+          }
+          return;
+        }
+
         // Format today's date in Singapore Time YYYY-MM-DD
         const now = new Date();
         const sgDateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' }); // YYYY-MM-DD
         
-        const todayTides = data.filter(t => t.date && t.date.startsWith(sgDateStr));
-        const container = document.getElementById('tides-container');
-        const nextBadge = document.getElementById('next-tide-badge');
-        if (!container) return;
+        let targetTides = data.filter(t => t.date && t.date.startsWith(sgDateStr));
 
-        if (todayTides.length === 0) {
-          container.innerHTML = '<div class="text-center py-4 text-slate-400 text-xs col-span-full">No tide data recorded for today.</div>';
+        // If no exact match for date string, find nearest date
+        if (targetTides.length === 0) {
+          const sortedByProximity = [...data].sort((a, b) => Math.abs(new Date(a.date) - now) - Math.abs(new Date(b.date) - now));
+          if (sortedByProximity.length > 0) {
+            const nearestDate = sortedByProximity[0].date.split('T')[0];
+            targetTides = data.filter(t => t.date && t.date.startsWith(nearestDate));
+          }
+        }
+
+        if (targetTides.length === 0) {
+          if (nextBadge) {
+            nextBadge.textContent = "No Tides Today";
+            nextBadge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200";
+          }
+          if (container) {
+            container.innerHTML = '<div class="text-center py-4 text-slate-400 text-xs col-span-full">No tide data recorded for this date.</div>';
+          }
           return;
         }
 
-        todayTides.sort((a, b) => new Date(a.date) - new Date(b.date));
+        targetTides.sort((a, b) => new Date(a.date) - new Date(b.date));
 
         const nowMs = now.getTime();
-        const nextTide = todayTides.find(t => new Date(t.date).getTime() > nowMs) || todayTides[todayTides.length - 1];
+        const nextTide = targetTides.find(t => new Date(t.date).getTime() > nowMs) || targetTides[targetTides.length - 1];
 
         if (nextBadge && nextTide) {
           const isHigh = nextTide.classification === 'H';
           const nextTime = new Date(nextTide.date).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Singapore' });
-          nextBadge.textContent = `Next: ${isHigh ? 'High Tide ⬆️' : 'Low Tide ⬇️'} ${nextTide.height}m at ${nextTime}`;
+          const isPassed = new Date(nextTide.date).getTime() <= nowMs;
+          nextBadge.textContent = `${isPassed ? 'Latest' : 'Next'}: ${isHigh ? 'High Tide ⬆️' : 'Low Tide ⬇️'} ${nextTide.height}m at ${nextTime}`;
           nextBadge.className = `px-2.5 py-0.5 rounded-full text-[10px] font-black ${isHigh ? 'bg-blue-100 text-blue-800 border border-blue-200' : 'bg-cyan-100 text-cyan-800 border border-cyan-200'}`;
         }
 
         let html = '';
-        todayTides.forEach(t => {
+        targetTides.forEach(t => {
           const isHigh = t.classification === 'H';
           const time = new Date(t.date).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Singapore' });
           const isPast = new Date(t.date).getTime() < nowMs;
+          const isNext = t === nextTide && !isPast;
 
           html += `
-            <div class="p-2.5 rounded-xl border ${isPast ? 'bg-slate-50/70 border-slate-200/50 opacity-60' : 'bg-white border-blue-100 shadow-2xs'} text-center space-y-1">
+            <div class="relative p-2.5 rounded-xl border ${isNext ? 'bg-blue-50/80 border-blue-300 ring-2 ring-blue-400/30 shadow-sm' : isPast ? 'bg-slate-50/70 border-slate-200/50 opacity-60' : 'bg-white border-blue-100 shadow-2xs'} text-center space-y-1 transition-all">
+              ${isNext ? '<span class="absolute -top-2 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[8px] font-black px-1.5 py-0.2 rounded-full uppercase tracking-wider shadow-xs">Next</span>' : ''}
               <div class="flex items-center justify-center gap-1">
                 <span class="text-sm">${isHigh ? '🌊⬆️' : '🌊⬇️'}</span>
                 <span class="text-[10px] font-extrabold uppercase ${isHigh ? 'text-blue-700' : 'text-cyan-700'}">${isHigh ? 'High Tide' : 'Low Tide'}</span>
               </div>
               <p class="text-sm font-black text-slate-800">${time}</p>
-              <span class="inline-block px-2 py-0.5 rounded-md text-[10px] font-black ${isHigh ? 'bg-blue-50 text-blue-700' : 'bg-cyan-50 text-cyan-700'}">
+              <span class="inline-block px-2 py-0.5 rounded-md text-[10px] font-black ${isHigh ? 'bg-blue-100/70 text-blue-700' : 'bg-cyan-100/70 text-cyan-700'}">
                 ${t.height}m
               </span>
             </div>
@@ -1267,7 +1420,14 @@
 
         container.innerHTML = html;
       } catch (err) {
-        console.error("Tides fetch error:", err);
+        console.error("Tides processing error:", err);
+        if (nextBadge) {
+          nextBadge.textContent = "Data Error";
+          nextBadge.className = "px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-600 border border-rose-100";
+        }
+        if (container) {
+          container.innerHTML = '<div class="text-center py-4 text-slate-400 text-xs col-span-full">Unable to render tide timings. Tap Refresh to try again.</div>';
+        }
       }
     }
 

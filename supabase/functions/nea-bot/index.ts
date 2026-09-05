@@ -76,10 +76,40 @@ async function fetchUv() {
 }
 
 async function fetchTides() {
-  const res = await fetch("https://vincentneo.github.io/SGTideTimings/latest.json");
-  const data = await res.json();
-  const sgDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
-  return data.filter((t: any) => t.date && t.date.startsWith(sgDateStr));
+  let data: any[] = [];
+  try {
+    const res = await fetch("https://vincentneo.github.io/SGTideTimings/latest.json");
+    if (res.ok) {
+      data = await res.json();
+    }
+  } catch (e) {
+    console.warn("Direct tides fetch failed, trying GitHub raw:", e);
+  }
+
+  if (!data || data.length === 0) {
+    try {
+      const res2 = await fetch("https://raw.githubusercontent.com/jasontan89/nea-bot/main/docs/data/tides.json");
+      if (res2.ok) {
+        data = await res2.json();
+      }
+    } catch (e2) {
+      console.warn("Raw tides fetch failed:", e2);
+    }
+  }
+
+  const now = new Date();
+  const sgDateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
+  let filtered = data.filter((t: any) => t.date && t.date.startsWith(sgDateStr));
+
+  if (filtered.length === 0 && data.length > 0) {
+    const sorted = [...data].sort((a, b) => Math.abs(new Date(a.date).getTime() - now.getTime()) - Math.abs(new Date(b.date).getTime() - now.getTime()));
+    if (sorted.length > 0) {
+      const nearestDate = sorted[0].date.split('T')[0];
+      filtered = data.filter((t: any) => t.date && t.date.startsWith(nearestDate));
+    }
+  }
+
+  return filtered;
 }
 
 // ── Keyboards ────────────────────────────────────────────────────────────────
