@@ -75,6 +75,13 @@ async function fetchUv() {
   return data.data.records[0]?.index ?? [];
 }
 
+async function fetchTides() {
+  const res = await fetch("https://vincentneo.github.io/SGTideTimings/latest.json");
+  const data = await res.json();
+  const sgDateStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
+  return data.filter((t: any) => t.date && t.date.startsWith(sgDateStr));
+}
+
 // ── Keyboards ────────────────────────────────────────────────────────────────
 
 function getMainMenuKeyboard() {
@@ -87,7 +94,9 @@ function getMainMenuKeyboard() {
     .text("📍 2h Town Weather", "action_nowcast")
     .text("☀️ UV Index", "action_uv")
     .row()
+    .text("🌊 Tide Timings", "action_tides")
     .text("🔔 Alerts Settings", "action_alerts")
+    .row()
     .text("🔄 Refresh", "action_refresh");
 }
 
@@ -145,6 +154,10 @@ bot.command("uv", async (ctx) => {
 
 bot.command("alerts", async (ctx) => {
   await handleAlertsMenu(ctx);
+});
+
+bot.command("tides", async (ctx) => {
+  await handleTidesRequest(ctx);
 });
 
 // ── Handlers ─────────────────────────────────────────────────────────────────
@@ -302,6 +315,64 @@ async function handleUvRequest(ctx: any) {
   }
 }
 
+async function handleTidesRequest(ctx: any) {
+  try {
+    const tides = await fetchTides();
+    if (!tides || tides.length === 0) {
+      await ctx.reply("🌊 Singapore Tidal predictions are currently unavailable for today.");
+      return;
+    }
+
+    tides.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    const now = Date.now();
+    const nextTide = tides.find((t: any) => new Date(t.date).getTime() > now);
+
+    let msg = 
+      `🌊 *Singapore Daily Tide Timings*\n` +
+      `_Hydrographic Dept / MPA Singapore Reference_\n\n`;
+
+    if (nextTide) {
+      const typeStr = nextTide.classification === "H" ? "High Tide 🌊" : "Low Tide 🏖️";
+      const timeStr = new Date(nextTide.date).toLocaleTimeString("en-SG", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+        timeZone: "Asia/Singapore"
+      });
+      msg += `📍 *Next Tide:* *${typeStr}* at *${timeStr}* (${nextTide.height}m)\n\n`;
+    }
+
+    msg += `📅 *Today's Tidal Schedule:*\n`;
+    for (const t of tides) {
+      const tTime = new Date(t.date).getTime();
+      const isPast = tTime < now;
+      const isNext = t === nextTide;
+      const typeStr = t.classification === "H" ? "🌊 High Tide" : "🏖️ Low Tide";
+      const timeStr = new Date(t.date).toLocaleTimeString("en-SG", {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+        timeZone: "Asia/Singapore"
+      });
+      const badge = isNext ? " 👈 *NEXT*" : isPast ? " _(passed)_" : "";
+      msg += `• ${timeStr} — *${typeStr}* (${t.height.toFixed(1)}m)${badge}\n`;
+    }
+
+    msg += `\n💡 *Note:* Heights are above Chart Datum. Essential for fishing, coastal walks & watersports.`;
+
+    const kb = new InlineKeyboard()
+      .webApp("📊 Open Dashboard & Tides", DASHBOARD_URL)
+      .row()
+      .text("« Back to Menu", "action_menu");
+
+    await ctx.reply(msg, { parse_mode: "Markdown", reply_markup: kb });
+  } catch (error) {
+    console.error("Error in handleTidesRequest:", error);
+    await ctx.reply("Failed to fetch Tide Timings.");
+  }
+}
+
 async function handleAlertsMenu(ctx: any) {
   if (!ctx.chat?.id) return;
   const { data, error } = await supabase.from('user_subscriptions').select('*').eq('chat_id', ctx.chat.id).single();
@@ -313,6 +384,7 @@ async function handleAlertsMenu(ctx: any) {
 
   const psiStatus = data.psi_alert ? "✅ Active" : "❌ Disabled";
   const rainStatus = data.rain_alert ? "✅ Active" : "❌ Disabled";
+  const dengueStatus = data.dengue_alert ? "✅ Active" : "❌ Disabled";
 
   const msg = 
     `🔔 *Push Alert Notifications Settings*\n\n` +
@@ -321,11 +393,14 @@ async function handleAlertsMenu(ctx: any) {
     `  _Pushes when 24h PSI enters Unhealthy range._\n\n` +
     `• 🌧️ *Heavy Rain Alert:* ${rainStatus}\n` +
     `  _Pushes when intense downpours or weather alerts trigger._\n\n` +
+    `• 🦟 *Dengue Cluster Watch:* ${dengueStatus}\n` +
+    `  _Pushes when high-risk clusters (≥10 cases) are active._\n\n` +
     `Tap below to toggle your alerts:`;
 
   const keyboard = new InlineKeyboard()
     .text(`Haze Alerts: ${psiStatus}`, "toggle_psi").row()
     .text(`Rain Alerts: ${rainStatus}`, "toggle_rain").row()
+    .text(`Dengue Watch: ${dengueStatus}`, "toggle_dengue").row()
     .text("🧪 Send Test Alert", "action_test_alert").row()
     .text("« Back to Menu", "action_menu");
 
@@ -337,11 +412,12 @@ async function handleAlertsMenu(ctx: any) {
 bot.callbackQuery("action_test_alert", async (ctx) => {
   await ctx.answerCallbackQuery("Dispatching test alert... 🚨");
   const testMsg = 
-    `🚨 *[TEST ALERT] Singapore Meteorological Warning*\n\n` +
+    `🚨 *[TEST ALERT] Singapore Environmental Warning*\n\n` +
     `This is a test notification confirming your Telegram alert delivery works!\n\n` +
     `• 🌬️ *Haze Watch:* Automated alerts trigger when 24h PSI > 100 (Unhealthy).\n` +
     `• 🌧️ *Rain Watch:* Automated alerts trigger when heavy rain or thundery showers are detected across SG towns.\n` +
-    `• ⏰ *Check Frequency:* Scanned automatically every hour via Supabase.\n\n` +
+    `• 🦟 *Dengue Watch:* Automated alerts trigger when high-risk clusters (≥10 cases) are active.\n` +
+    `• ⏰ *Check Frequency:* Scanned automatically via Supabase Cron.\n\n` +
     `✅ *Delivery Status:* Perfect! You will receive live warnings here whenever thresholds are breached.`;
   await ctx.reply(testMsg, { parse_mode: "Markdown" });
 });
@@ -388,6 +464,11 @@ bot.callbackQuery("action_uv", async (ctx) => {
   await handleUvRequest(ctx);
 });
 
+bot.callbackQuery("action_tides", async (ctx) => {
+  await ctx.answerCallbackQuery();
+  await handleTidesRequest(ctx);
+});
+
 bot.callbackQuery("action_alerts", async (ctx) => {
   await ctx.answerCallbackQuery();
   await handleAlertsMenu(ctx);
@@ -414,6 +495,18 @@ bot.callbackQuery("toggle_rain", async (ctx) => {
   
   await supabase.from('user_subscriptions').update({ rain_alert: newState }).eq('chat_id', chatId);
   await ctx.answerCallbackQuery(`Rain Alerts turned ${newState ? "ON" : "OFF"}`);
+  await handleAlertsMenu(ctx);
+});
+
+bot.callbackQuery("toggle_dengue", async (ctx) => {
+  const chatId = ctx.chat?.id;
+  if (!chatId) return;
+  
+  const { data } = await supabase.from('user_subscriptions').select('dengue_alert').eq('chat_id', chatId).single();
+  const newState = !data?.dengue_alert;
+  
+  await supabase.from('user_subscriptions').update({ dengue_alert: newState }).eq('chat_id', chatId);
+  await ctx.answerCallbackQuery(`Dengue Alerts turned ${newState ? "ON" : "OFF"}`);
   await handleAlertsMenu(ctx);
 });
 

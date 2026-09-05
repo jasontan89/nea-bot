@@ -80,14 +80,17 @@
         </div>
         <!-- Map Layer Toggle Buttons -->
         <div class="flex bg-slate-100 p-0.5 rounded-xl text-xs font-semibold">
-          <button id="btn-layer-psi" onclick="switchMapLayer('psi')" class="px-2.5 py-1 rounded-lg bg-white text-blue-600 shadow-xs transition">
+          <button id="btn-layer-psi" onclick="switchMapLayer('psi')" class="px-2 py-1 rounded-lg bg-white text-blue-600 shadow-xs transition">
             🌬️ PSI
           </button>
-          <button id="btn-layer-weather" onclick="switchMapLayer('weather')" class="px-2.5 py-1 rounded-lg text-slate-500 transition">
+          <button id="btn-layer-weather" onclick="switchMapLayer('weather')" class="px-2 py-1 rounded-lg text-slate-500 transition">
             🌦️ Weather
           </button>
-          <button id="btn-layer-dengue" onclick="switchMapLayer('dengue')" class="px-2.5 py-1 rounded-lg text-slate-500 transition">
+          <button id="btn-layer-dengue" onclick="switchMapLayer('dengue')" class="px-2 py-1 rounded-lg text-slate-500 transition">
             🦟 Dengue
+          </button>
+          <button id="btn-layer-rainfall" onclick="switchMapLayer('rainfall')" class="px-2 py-1 rounded-lg text-slate-500 transition">
+            🌧️ Rain
           </button>
         </div>
       </div>
@@ -106,6 +109,13 @@
         <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-red-600 border border-white shadow-xs"></span> High Risk (≥10)</span>
         <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-amber-400 border border-slate-700 shadow-xs"></span> Alert (&lt;10)</span>
         <span id="dengue-cluster-count" class="text-[11px] text-rose-700 font-black">-- Clusters</span>
+      </div>
+      <div id="rainfall-legend" class="hidden flex items-center justify-between px-2 pt-1 text-[11px] font-semibold text-slate-700">
+        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-slate-400"></span> 0mm Dry</span>
+        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-cyan-500"></span> &lt;5mm</span>
+        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-blue-600"></span> 5-20mm</span>
+        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-purple-600"></span> &gt;20mm Heavy</span>
+        <span id="rainfall-stations-count" class="text-[10px] text-blue-700 font-extrabold">88 Sensors</span>
       </div>
       <div id="weather-map-hint" class="hidden text-center text-[11px] text-slate-500 font-medium pt-1">
         💡 Tap any icon on the map to view local town forecast & set as favorite.
@@ -288,6 +298,24 @@
         </div>
       </div>
 
+      <!-- Singapore Tide Timings (Marine) -->
+      <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80 space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-1.5">
+            <span class="text-base">🌊</span>
+            <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider">Singapore Tide Timings</h3>
+          </div>
+          <span id="next-tide-badge" class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-50 text-blue-700 border border-blue-100">
+            Checking Next Tide...
+          </span>
+        </div>
+
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1" id="tides-container">
+          <div class="text-center py-4 text-slate-400 text-xs col-span-full">Loading tidal predictions...</div>
+        </div>
+        <p class="text-[10px] text-slate-400 text-center font-medium">Singapore Port Waters & Coasts (MPA / NEA Official Tides)</p>
+      </div>
+
       <!-- 4-Day Outlook -->
       <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80 space-y-3">
         <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider">4-Day Extended Outlook</h3>
@@ -386,6 +414,7 @@
     let psiLayerGroup = null;
     let weatherLayerGroup = null;
     let dengueLayerGroup = null;
+    let rainfallLayerGroup = null;
     let currentMapLayer = 'psi';
     let globalTowns = [];
     let selectedRegionFilter = 'all';
@@ -459,6 +488,7 @@
       psiLayerGroup = L.layerGroup().addTo(map);
       weatherLayerGroup = L.layerGroup();
       dengueLayerGroup = L.layerGroup();
+      rainfallLayerGroup = L.layerGroup();
     }
 
     function switchMapLayer(layer) {
@@ -468,41 +498,52 @@
       const btnPsi = document.getElementById('btn-layer-psi');
       const btnWeather = document.getElementById('btn-layer-weather');
       const btnDengue = document.getElementById('btn-layer-dengue');
+      const btnRainfall = document.getElementById('btn-layer-rainfall');
       const indicator = document.getElementById('map-layer-indicator');
       const legend = document.getElementById('psi-legend');
       const hint = document.getElementById('weather-map-hint');
       const dengueLegend = document.getElementById('dengue-legend');
+      const rainfallLegend = document.getElementById('rainfall-legend');
 
       map.removeLayer(psiLayerGroup);
       map.removeLayer(weatherLayerGroup);
       map.removeLayer(dengueLayerGroup);
+      map.removeLayer(rainfallLayerGroup);
 
-      btnPsi.className = "px-2.5 py-1 rounded-lg text-slate-500 transition";
-      btnWeather.className = "px-2.5 py-1 rounded-lg text-slate-500 transition";
-      btnDengue.className = "px-2.5 py-1 rounded-lg text-slate-500 transition";
+      btnPsi.className = "px-2 py-1 rounded-lg text-slate-500 transition";
+      btnWeather.className = "px-2 py-1 rounded-lg text-slate-500 transition";
+      btnDengue.className = "px-2 py-1 rounded-lg text-slate-500 transition";
+      btnRainfall.className = "px-2 py-1 rounded-lg text-slate-500 transition";
 
       legend.classList.add('hidden');
       hint.classList.add('hidden');
       if (dengueLegend) dengueLegend.classList.add('hidden');
+      if (rainfallLegend) rainfallLegend.classList.add('hidden');
 
       if (layer === 'psi') {
         map.addLayer(psiLayerGroup);
-        btnPsi.className = "px-2.5 py-1 rounded-lg bg-white text-blue-600 shadow-xs transition";
+        btnPsi.className = "px-2 py-1 rounded-lg bg-white text-blue-600 shadow-xs transition";
         indicator.textContent = "Air Quality (PSI)";
         indicator.className = "text-[11px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full";
         legend.classList.remove('hidden');
       } else if (layer === 'weather') {
         map.addLayer(weatherLayerGroup);
-        btnWeather.className = "px-2.5 py-1 rounded-lg bg-white text-blue-600 shadow-xs transition";
+        btnWeather.className = "px-2 py-1 rounded-lg bg-white text-blue-600 shadow-xs transition";
         indicator.textContent = "2h Weather Pins (47 Towns)";
         indicator.className = "text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full";
         hint.classList.remove('hidden');
       } else if (layer === 'dengue') {
         map.addLayer(dengueLayerGroup);
-        btnDengue.className = "px-2.5 py-1 rounded-lg bg-white text-rose-600 shadow-xs transition";
+        btnDengue.className = "px-2 py-1 rounded-lg bg-white text-rose-600 shadow-xs transition";
         indicator.textContent = "Dengue Clusters";
         indicator.className = "text-[11px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-full";
         if (dengueLegend) dengueLegend.classList.remove('hidden');
+      } else if (layer === 'rainfall') {
+        map.addLayer(rainfallLayerGroup);
+        btnRainfall.className = "px-2 py-1 rounded-lg bg-white text-blue-600 shadow-xs transition";
+        indicator.textContent = "Rainfall Sensors (88 Stations)";
+        indicator.className = "text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full";
+        if (rainfallLegend) rainfallLegend.classList.remove('hidden');
       }
     }
 
@@ -539,7 +580,9 @@
           loadNowcastData(),
           loadWeatherData(),
           loadUvData(),
-          loadDengueData()
+          loadDengueData(),
+          loadRainfallData(),
+          loadTidesData()
         ]);
         document.getElementById('last-updated').textContent = new Date().toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: true });
         updateFavoriteCard();
@@ -1087,6 +1130,145 @@
           }
         }
       });
+    }
+
+    // 6. Rainfall Stations Network (88 Stations)
+    async function loadRainfallData() {
+      try {
+        const res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/rainfall");
+        if (!res.ok) return;
+        const json = await res.json();
+        const stations = json.data?.stations || [];
+        const readings = json.data?.readings?.[0]?.data || [];
+
+        const readingMap = {};
+        readings.forEach(r => {
+          readingMap[r.stationId] = r.value ?? 0;
+        });
+
+        rainfallLayerGroup.clearLayers();
+        let rainingCount = 0;
+
+        stations.forEach(st => {
+          const lat = st.location?.latitude;
+          const lng = st.location?.longitude;
+          if (!lat || !lng) return;
+
+          const val = readingMap[st.id] ?? 0;
+          if (val > 0) rainingCount++;
+
+          let color = '#94a3b8'; // dry
+          let fillColor = '#cbd5e1';
+          let radius = 6;
+          let statusText = 'Dry / No Rain ☀️';
+
+          if (val > 0 && val <= 5) {
+            color = '#0284c7';
+            fillColor = '#38bdf8';
+            radius = 8;
+            statusText = 'Light Rain 🌦️';
+          } else if (val > 5 && val <= 20) {
+            color = '#1d4ed8';
+            fillColor = '#2563eb';
+            radius = 10;
+            statusText = 'Moderate Rain 🌧️';
+          } else if (val > 20) {
+            color = '#7e22ce';
+            fillColor = '#a855f7';
+            radius = 12;
+            statusText = 'Heavy Downpour ⛈️';
+          }
+
+          const circle = L.circleMarker([lat, lng], {
+            radius: radius,
+            color: color,
+            weight: 2,
+            fillColor: fillColor,
+            fillOpacity: val > 0 ? 0.85 : 0.45
+          }).addTo(rainfallLayerGroup);
+
+          circle.bindPopup(`
+            <div class="p-2 space-y-1 max-w-[210px]">
+              <div class="flex items-center gap-1.5">
+                <span class="text-sm">🌧️</span>
+                <h4 class="font-bold text-xs text-slate-800 leading-snug">${st.name}</h4>
+              </div>
+              <p class="text-xs font-semibold text-slate-600">${statusText}</p>
+              <div class="pt-1">
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-black ${val > 0 ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'}">
+                  ${val.toFixed(1)} mm / 5-min
+                </span>
+              </div>
+            </div>
+          `);
+        });
+
+        const countEl = document.getElementById('rainfall-stations-count');
+        if (countEl) {
+          countEl.textContent = `${rainingCount} Raining (${stations.length} Sensors)`;
+        }
+      } catch (err) {
+        console.error("Rainfall fetch error:", err);
+      }
+    }
+
+    // 7. Singapore Tide Timings (Marine)
+    async function loadTidesData() {
+      try {
+        const res = await fetch("https://vincentneo.github.io/SGTideTimings/latest.json");
+        if (!res.ok) return;
+        const data = await res.json();
+        
+        // Format today's date in Singapore Time YYYY-MM-DD
+        const now = new Date();
+        const sgDateStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' }); // YYYY-MM-DD
+        
+        const todayTides = data.filter(t => t.date && t.date.startsWith(sgDateStr));
+        const container = document.getElementById('tides-container');
+        const nextBadge = document.getElementById('next-tide-badge');
+        if (!container) return;
+
+        if (todayTides.length === 0) {
+          container.innerHTML = '<div class="text-center py-4 text-slate-400 text-xs col-span-full">No tide data recorded for today.</div>';
+          return;
+        }
+
+        todayTides.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        const nowMs = now.getTime();
+        const nextTide = todayTides.find(t => new Date(t.date).getTime() > nowMs) || todayTides[todayTides.length - 1];
+
+        if (nextBadge && nextTide) {
+          const isHigh = nextTide.classification === 'H';
+          const nextTime = new Date(nextTide.date).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Singapore' });
+          nextBadge.textContent = `Next: ${isHigh ? 'High Tide ⬆️' : 'Low Tide ⬇️'} ${nextTide.height}m at ${nextTime}`;
+          nextBadge.className = `px-2.5 py-0.5 rounded-full text-[10px] font-black ${isHigh ? 'bg-blue-100 text-blue-800 border border-blue-200' : 'bg-cyan-100 text-cyan-800 border border-cyan-200'}`;
+        }
+
+        let html = '';
+        todayTides.forEach(t => {
+          const isHigh = t.classification === 'H';
+          const time = new Date(t.date).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Asia/Singapore' });
+          const isPast = new Date(t.date).getTime() < nowMs;
+
+          html += `
+            <div class="p-2.5 rounded-xl border ${isPast ? 'bg-slate-50/70 border-slate-200/50 opacity-60' : 'bg-white border-blue-100 shadow-2xs'} text-center space-y-1">
+              <div class="flex items-center justify-center gap-1">
+                <span class="text-sm">${isHigh ? '🌊⬆️' : '🌊⬇️'}</span>
+                <span class="text-[10px] font-extrabold uppercase ${isHigh ? 'text-blue-700' : 'text-cyan-700'}">${isHigh ? 'High Tide' : 'Low Tide'}</span>
+              </div>
+              <p class="text-sm font-black text-slate-800">${time}</p>
+              <span class="inline-block px-2 py-0.5 rounded-md text-[10px] font-black ${isHigh ? 'bg-blue-50 text-blue-700' : 'bg-cyan-50 text-cyan-700'}">
+                ${t.height}m
+              </span>
+            </div>
+          `;
+        });
+
+        container.innerHTML = html;
+      } catch (err) {
+        console.error("Tides fetch error:", err);
+      }
     }
 
     window.addEventListener('DOMContentLoaded', () => {

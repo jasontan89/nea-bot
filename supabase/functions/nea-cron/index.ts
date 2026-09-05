@@ -78,7 +78,64 @@ Deno.serve(async (req) => {
       }
     }
     
-    return new Response(JSON.stringify({ success: true, peakPsi: psi, rainTownsCount: rainTowns.length }), {
+    // 3. Check High-Risk Dengue Clusters & Alert
+    let highRiskCount = 0;
+    try {
+      const dengueRes = await fetch("https://www.nea.gov.sg/api/OneMap/GetMapData/DENGUE_CLUSTER");
+      const dengueJson = await dengueRes.json();
+      const parsedDengue = typeof dengueJson === "string" ? JSON.parse(dengueJson) : dengueJson;
+      const rawClusters = (parsedDengue.SrchResults || []).slice(1);
+
+      // Filter clusters with >= 10 cases (NEA Red Alert / High Risk)
+      const highRisk = rawClusters
+        .filter((c: any) => parseInt(c.CASE_SIZE || "0", 10) >= 10)
+        .sort((a: any, b: any) => parseInt(b.CASE_SIZE || "0", 10) - parseInt(a.CASE_SIZE || "0", 10));
+
+      highRiskCount = highRisk.length;
+
+      if (highRisk.length > 0) {
+        const { data: dengueUsers } = await supabase
+          .from('user_subscriptions')
+          .select('chat_id')
+          .eq('dengue_alert', true);
+
+        if (dengueUsers && dengueUsers.length > 0) {
+          const clusterList = highRisk.slice(0, 4).map((c: any) => 
+            `• 🔴 *${c.DESCRIPTION}*\n  ⚠️ *${c.CASE_SIZE} cases* | Breeding: _${c.HOMES || "Common areas"}_`
+          ).join("\n\n");
+
+          const extraInfo = highRisk.length > 4 ? `\n\n_...plus ${highRisk.length - 4} more high-risk clusters._` : "";
+
+          const dengueMsg = 
+            `🦟 *DENGUE HIGH-RISK CLUSTERS ALERT* ⚠️\n\n` +
+            `NEA reports *${highRisk.length}* active high-risk dengue clusters (≥10 cases):\n\n` +
+            `${clusterList}${extraInfo}\n\n` +
+            `🛡️ *B-L-O-C-K Mosquito Breeding:*\n` +
+            `• *B*reak up hardened soil\n` +
+            `• *L*ift and empty flowerpot plates\n` +
+            `• *O*verturn water storage pails\n` +
+            `• *C*hange water in vases\n` +
+            `• *K*eep roof gutters clear`;
+
+          for (const user of dengueUsers) {
+            try {
+              await bot.api.sendMessage(user.chat_id, dengueMsg, { parse_mode: "Markdown" });
+            } catch (e) {
+              console.error(`Failed to send Dengue alert to ${user.chat_id}`, e);
+            }
+          }
+        }
+      }
+    } catch (dErr) {
+      console.error("Dengue scan failed in cron:", dErr);
+    }
+    
+    return new Response(JSON.stringify({ 
+      success: true, 
+      peakPsi: psi, 
+      rainTownsCount: rainTowns.length,
+      highRiskDengueCount: highRiskCount
+    }), {
       headers: { "Content-Type": "application/json" },
     });
   } catch (err) {
