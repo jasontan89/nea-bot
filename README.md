@@ -3,9 +3,9 @@
 A Telegram bot that provides real-time meteorological data for Singapore from the National Environment Agency (NEA).
 
 ## Features
-- **Haze & PSI Tracking**: Real-time 1-hour PSI index and haze tracking (calculated from live 1-hour PM2.5 readings).
+- **Air Quality & Haze (1-Hour PM2.5)**: Real-time 1-hour PM2.5 readings categorized into official NEA 4-Bands (Band 1 Normal to Band 4 Very High).
 - **Weather Forecasts**: 2-hour and 24-hour weather forecasts.
-- **Alerts**: Push notifications for heavy rain warnings and unhealthy 1-hour PSI levels.
+- **Alerts**: Push notifications for heavy rain warnings and Elevated 1-hour PM2.5 levels (Band 2+).
 - **Web Dashboard**: An integrated Telegram Web App for viewing charts and details.
 - **Other Info**: UV Index and Dengue Clusters.
 
@@ -17,7 +17,7 @@ A Telegram bot that provides real-time meteorological data for Singapore from th
 
 ## Commands
 - `/start` - Main menu
-- `/psi` - Get current 1-hour PSI and PM2.5
+- `/psi` - Get current 1-hour PM2.5 and NEA Bands
 - `/forecast` - Get weather forecasts
 - `/weather` - Real-time warnings
 - `/alerts` - Manage subscription alerts
