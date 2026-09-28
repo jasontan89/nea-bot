@@ -170,10 +170,10 @@
       <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200/80 space-y-3">
         <div class="flex justify-between items-start">
           <div>
-            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Singapore 24h Peak PSI</span>
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Singapore 1-Hour Peak PSI</span>
             <div class="flex items-baseline gap-2 mt-1">
               <span id="hero-psi-val" class="text-5xl font-extrabold text-slate-900 tracking-tight">--</span>
-              <span class="text-sm font-semibold text-slate-400">PSI</span>
+              <span class="text-sm font-semibold text-slate-400">1h PSI</span>
             </div>
           </div>
           <span id="hero-status-badge" class="px-3.5 py-1.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600 shadow-2xs">
@@ -187,7 +187,7 @@
 
         <!-- 5 Region Breakdown -->
         <div class="pt-2 border-t border-slate-100">
-          <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Regional 24-hr PSI & PM2.5</p>
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Regional 1-Hour PSI & PM2.5</p>
           <div class="grid grid-cols-5 gap-2 text-center" id="region-cards">
             <!-- Region items dynamically injected -->
           </div>
@@ -199,12 +199,12 @@
         <h3 class="text-xs font-bold text-slate-500 uppercase tracking-wider">Islandwide Pollutant Readings</h3>
         <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center" id="pollutants-grid">
           <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-            <span class="text-[10px] uppercase font-bold text-slate-400 block">PM2.5 (24h)</span>
-            <span id="pm25-stat" class="text-base font-extrabold text-slate-800">--</span>
+            <span class="text-[10px] uppercase font-bold text-slate-400 block">Peak 1h PM2.5</span>
+            <span id="pm25-1h-stat" class="text-base font-extrabold text-slate-800">--</span>
           </div>
           <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-            <span class="text-[10px] uppercase font-bold text-slate-400 block">PM10 (24h)</span>
-            <span id="pm10-stat" class="text-base font-extrabold text-slate-800">--</span>
+            <span class="text-[10px] uppercase font-bold text-slate-400 block">24h Peak PSI</span>
+            <span id="psi-24h-stat" class="text-base font-extrabold text-slate-800">--</span>
           </div>
           <div class="bg-slate-50 p-2.5 rounded-xl border border-slate-100">
             <span class="text-[10px] uppercase font-bold text-slate-400 block">Ozone (O3)</span>
@@ -478,6 +478,17 @@
       return { bg: '#8b5cf6', label: 'Hazardous 🟣', badgeClass: 'bg-purple-100 text-purple-800 border-purple-200' };
     }
 
+    function pm25ToPsi(pm25) {
+      if (!pm25 || pm25 <= 0) return 0;
+      if (pm25 <= 12) return Math.round((pm25 / 12) * 50);
+      if (pm25 <= 55) return Math.round(50 + ((pm25 - 12) / (55 - 12)) * 50);
+      if (pm25 <= 150) return Math.round(100 + ((pm25 - 55) / (150 - 55)) * 100);
+      if (pm25 <= 250) return Math.round(200 + ((pm25 - 150) / (250 - 150)) * 100);
+      if (pm25 <= 350) return Math.round(300 + ((pm25 - 250) / (350 - 250)) * 100);
+      if (pm25 <= 500) return Math.round(400 + ((pm25 - 350) / (500 - 350)) * 100);
+      return Math.round(500 + (pm25 - 500));
+    }
+
     function getWeatherEmoji(text) {
       const t = (text || "").toLowerCase();
       if (t.includes("thunder") || t.includes("lightning")) return "⛈️";
@@ -617,11 +628,16 @@
 
     // 1. PSI & Air Quality
     async function loadPsiData() {
-      const res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/psi");
-      const json = await res.json();
-      const readings = json.data.items[0].readings;
-      const psi = readings.psi_twenty_four_hourly;
-      const pm25 = readings.pm25_twenty_four_hourly;
+      const [pm25Res, psiRes] = await Promise.all([
+        fetch("https://api-open.data.gov.sg/v2/real-time/api/pm25"),
+        fetch("https://api-open.data.gov.sg/v2/real-time/api/psi")
+      ]);
+      const pm25Json = await pm25Res.json();
+      const psiJson = await psiRes.json();
+      const pm25_1h = pm25Json.data.items[0].readings.pm25_one_hourly;
+      const readings = psiJson.data.items[0].readings;
+      const psi24 = readings.psi_twenty_four_hourly;
+      const pm25_24 = readings.pm25_twenty_four_hourly;
       const pm10 = readings.pm10_twenty_four_hourly;
       const o3 = readings.o3_sub_index;
       const co = readings.co_sub_index;
@@ -629,13 +645,21 @@
       psiLayerGroup.clearLayers();
 
       const regions = ['central', 'north', 'south', 'east', 'west'];
-      let maxPsi = 0;
+      let max1hPsi = 0;
+      let max1hPm25 = 0;
+      let max24hPsi = 0;
       let regionCardsHtml = '';
 
       regions.forEach(r => {
-        const val = psi[r] || 0;
-        if (val > maxPsi) maxPsi = val;
-        const colorInfo = getPsiColor(val);
+        const p1h = pm25_1h[r] || 0;
+        if (p1h > max1hPm25) max1hPm25 = p1h;
+        const val1h = pm25ToPsi(p1h);
+        if (val1h > max1hPsi) max1hPsi = val1h;
+
+        const val24 = psi24[r] || 0;
+        if (val24 > max24hPsi) max24hPsi = val24;
+
+        const colorInfo = getPsiColor(val1h);
         const coord = REGION_COORDS[r];
 
         const circle = L.circle([coord.lat, coord.lng], {
@@ -648,7 +672,7 @@
 
         const icon = L.divIcon({
           className: '',
-          html: `<div class="custom-marker" style="background-color: ${colorInfo.bg}; color: white; width: 34px; height: 34px; font-size: 13px;">${val}</div>`,
+          html: `<div class="custom-marker" style="background-color: ${colorInfo.bg}; color: white; width: 34px; height: 34px; font-size: 13px;">${val1h}</div>`,
           iconSize: [34, 34],
           iconAnchor: [17, 17]
         });
@@ -660,10 +684,11 @@
             <h4 class="font-bold text-sm text-slate-900">${coord.name}</h4>
             <p class="text-xs font-semibold" style="color: ${colorInfo.bg}">${colorInfo.label}</p>
             <div class="text-xs text-slate-600 pt-1 border-t border-slate-100 space-y-0.5">
-              <p>• <strong>24h PSI:</strong> ${val}</p>
-              <p>• <strong>PM2.5:</strong> ${pm25[r]} µg/m³</p>
+              <p>• <strong>1-Hour PSI:</strong> ${val1h}</p>
+              <p>• <strong>1-Hour PM2.5:</strong> ${p1h} µg/m³</p>
+              <p>• <strong>24h Rolling PSI:</strong> ${val24}</p>
+              <p>• <strong>24h PM2.5:</strong> ${pm25_24[r]} µg/m³</p>
               <p>• <strong>PM10:</strong> ${pm10[r]} µg/m³</p>
-              <p>• <strong>O3:</strong> ${o3[r]}</p>
             </div>
           </div>
         `;
@@ -673,34 +698,37 @@
         regionCardsHtml += `
           <div class="bg-slate-50 p-2 rounded-xl border border-slate-100 text-center">
             <span class="text-[10px] uppercase font-bold text-slate-400 block">${r.slice(0, 4)}</span>
-            <span class="text-sm font-extrabold" style="color: ${colorInfo.bg}">${val}</span>
-            <span class="text-[9px] text-slate-400 block mt-0.5">${pm25[r]}µg</span>
+            <span class="text-sm font-extrabold" style="color: ${colorInfo.bg}">${val1h}</span>
+            <span class="text-[9px] text-slate-400 block mt-0.5">${p1h}µg (1h)</span>
           </div>
         `;
       });
 
       document.getElementById('region-cards').innerHTML = regionCardsHtml;
-      document.getElementById('hero-psi-val').textContent = maxPsi;
+      document.getElementById('hero-psi-val').textContent = max1hPsi;
 
-      const maxInfo = getPsiColor(maxPsi);
+      const maxInfo = getPsiColor(max1hPsi);
       const heroBadge = document.getElementById('hero-status-badge');
       heroBadge.textContent = maxInfo.label;
       heroBadge.className = `px-3.5 py-1.5 rounded-full text-xs font-bold border shadow-2xs ${maxInfo.badgeClass}`;
 
       const adv = document.getElementById('health-advisory');
-      if (maxPsi <= 50) {
+      if (max1hPsi <= 50) {
         adv.textContent = "🟢 Good air quality. Normal outdoor activities can be enjoyed by everyone.";
         adv.className = "p-3 bg-emerald-50 border border-emerald-100 rounded-xl text-xs text-emerald-900 leading-relaxed font-medium";
-      } else if (maxPsi <= 100) {
-        adv.textContent = "🟡 Moderate air quality. Normal activities can continue for all individuals.";
+      } else if (max1hPsi <= 100) {
+        adv.textContent = "🟡 Moderate air quality (Normal PM2.5). Normal activities can continue for all individuals.";
         adv.className = "p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-900 leading-relaxed font-medium";
-      } else {
-        adv.textContent = "🟠 Unhealthy haze conditions. Vulnerable groups, elderly, and children should reduce strenuous outdoor activity.";
+      } else if (max1hPsi <= 200) {
+        adv.textContent = "🟠 Elevated 1-hour haze conditions (Unhealthy). Vulnerable groups, elderly, and children should reduce strenuous outdoor activity.";
         adv.className = "p-3 bg-orange-50 border border-orange-100 rounded-xl text-xs text-orange-900 leading-relaxed font-medium";
+      } else {
+        adv.textContent = "🔴 High / Hazardous haze conditions. Everyone should minimize outdoor activities.";
+        adv.className = "p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-900 leading-relaxed font-medium";
       }
 
-      document.getElementById('pm25-stat').textContent = (pm25.central || '--') + ' µg/m³';
-      document.getElementById('pm10-stat').textContent = (pm10.central || '--') + ' µg/m³';
+      document.getElementById('pm25-1h-stat').textContent = max1hPm25 + ' µg/m³';
+      document.getElementById('psi-24h-stat').textContent = max24hPsi;
       document.getElementById('o3-stat').textContent = (o3.central || '--');
       document.getElementById('co-stat').textContent = (co.central || '--');
     }
