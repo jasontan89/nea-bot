@@ -24,6 +24,17 @@ function getPsiStatus(val: number) {
   return "Hazardous 🟣";
 }
 
+function pm25ToPsi(pm25: number): number {
+  if (pm25 <= 0) return 0;
+  if (pm25 <= 12) return Math.round((pm25 / 12) * 50);
+  if (pm25 <= 55) return Math.round(50 + ((pm25 - 12) / (55 - 12)) * 50);
+  if (pm25 <= 150) return Math.round(100 + ((pm25 - 55) / (150 - 55)) * 100);
+  if (pm25 <= 250) return Math.round(200 + ((pm25 - 150) / (250 - 150)) * 100);
+  if (pm25 <= 350) return Math.round(300 + ((pm25 - 250) / (350 - 250)) * 100);
+  if (pm25 <= 500) return Math.round(400 + ((pm25 - 350) / (500 - 350)) * 100);
+  return Math.round(500 + (pm25 - 500));
+}
+
 function getUvAdvisory(val: number) {
   if (val <= 2) return "Low 🟢 (Minimal protection needed)";
   if (val <= 5) return "Moderate 🟡 (Seek shade during midday)";
@@ -44,6 +55,12 @@ function getWeatherEmoji(text: string) {
 }
 
 // ── API Fetchers ─────────────────────────────────────────────────────────────
+
+async function fetch1hPm25(): Promise<Record<string, number>> {
+  const res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/pm25");
+  const data = await res.json();
+  return data.data.items[0].readings.pm25_one_hourly;
+}
 
 async function fetchPsi() {
   const res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/psi");
@@ -118,7 +135,7 @@ function getMainMenuKeyboard() {
   return new InlineKeyboard()
     .webApp("🗺️ Open Interactive Map & Dashboard", DASHBOARD_URL)
     .row()
-    .text("🌬️ PSI & PM2.5", "action_psi")
+    .text("🌬️ 1h PSI & PM2.5", "action_psi")
     .text("🌤️ 24h & 4-Day", "action_forecast")
     .row()
     .text("📍 2h Town Weather", "action_nowcast")
@@ -149,10 +166,10 @@ bot.command("start", async (ctx) => {
     `Your official real-time meteorological companion powered by live *National Environment Agency (data.gov.sg)* APIs.\n\n` +
     `📌 *Quick Access Features:*\n` +
     `• 🗺️ *Map Dashboard:* Visual overlay of PSI & weather on Singapore map\n` +
-    `• 🌬️ *Air Quality:* Real-time 24h PSI & PM2.5 across all 5 zones\n` +
+    `• 🌬️ *Air Quality:* Real-time 1-hour PSI & PM2.5 across all 5 zones\n` +
     `• 🌤️ *Forecasts:* 2h town nowcasts, 24h outlook, & 4-day trends\n` +
     `• ☀️ *UV Monitor:* Hourly UV Index & sun protection guides\n` +
-    `• 🔔 *Alerts:* Automated push alerts for high PSI & heavy rain\n\n` +
+    `• 🔔 *Alerts:* Automated push alerts for high 1h PSI & heavy rain\n\n` +
     `👇 *Tap any option below or open the live map:*`;
 
   await ctx.reply(welcomeText, {
@@ -194,21 +211,45 @@ bot.command("tides", async (ctx) => {
 
 async function handlePsiRequest(ctx: any) {
   try {
-    const readings = await fetchPsi();
-    const psi = readings.psi_twenty_four_hourly;
-    const pm25 = readings.pm25_twenty_four_hourly;
-    const maxPsi = Math.max(psi.central, psi.north, psi.south, psi.east, psi.west);
+    const [pm25_1h, psi24Readings] = await Promise.all([
+      fetch1hPm25().catch(() => null),
+      fetchPsi().catch(() => null)
+    ]);
+
+    const regions = ["central", "north", "south", "east", "west"] as const;
+    const regionLabels: Record<string, string> = {
+      central: "🏛️ Central",
+      north: "🌳 North",
+      south: "🚢 South",
+      east: "✈️ East",
+      west: "🏭 West"
+    };
+
+    const psi1h: Record<string, number> = {};
+    if (pm25_1h) {
+      for (const r of regions) {
+        psi1h[r] = pm25ToPsi(pm25_1h[r] ?? 0);
+      }
+    }
+
+    const psi24 = psi24Readings?.psi_twenty_four_hourly;
+    const max1hPsi = pm25_1h ? Math.max(...regions.map(r => psi1h[r] ?? 0)) : (psi24 ? Math.max(psi24.central, psi24.north, psi24.south, psi24.east, psi24.west) : 0);
+    const max1hPm25 = pm25_1h ? Math.max(...regions.map(r => pm25_1h[r] ?? 0)) : 0;
+    const max24hPsi = psi24 ? Math.max(psi24.central, psi24.north, psi24.south, psi24.east, psi24.west) : null;
+
+    const breakdown = regions.map(r => {
+      const pVal = psi1h[r] ?? (psi24 ? psi24[r] : 0);
+      const pmVal = pm25_1h ? `${pm25_1h[r]} µg/m³` : (psi24Readings?.pm25_twenty_four_hourly ? `${psi24Readings.pm25_twenty_four_hourly[r]} µg/m³ (24h)` : '--');
+      return `• ${regionLabels[r]}: 1h PSI *${pVal}* (${getPsiStatus(pVal)}) | 1h PM2.5: ${pmVal}`;
+    }).join("\n");
 
     const msg = 
-      `🌬️ *Singapore 24-Hour PSI & Air Quality*\n\n` +
-      `📊 *Overall Air Quality:* ${getPsiStatus(maxPsi)}\n` +
-      `🔥 *Peak 24h PSI:* *${maxPsi}*\n\n` +
-      `🗺️ *Regional Breakdown (PSI | PM2.5):*\n` +
-      `• 🏛️ *Central:* PSI *${psi.central}* (${getPsiStatus(psi.central)}) | PM2.5: ${pm25.central} µg/m³\n` +
-      `• 🌳 *North:*   PSI *${psi.north}* (${getPsiStatus(psi.north)}) | PM2.5: ${pm25.north} µg/m³\n` +
-      `• 🚢 *South:*   PSI *${psi.south}* (${getPsiStatus(psi.south)}) | PM2.5: ${pm25.south} µg/m³\n` +
-      `• ✈️ *East:*    PSI *${psi.east}* (${getPsiStatus(psi.east)}) | PM2.5: ${pm25.east} µg/m³\n` +
-      `• 🏭 *West:*    PSI *${psi.west}* (${getPsiStatus(psi.west)}) | PM2.5: ${pm25.west} µg/m³\n\n` +
+      `🌬️ *Singapore 1-Hour PSI & Air Quality*\n\n` +
+      `📊 *Overall Air Quality:* ${getPsiStatus(max1hPsi)}\n` +
+      `🔥 *Peak 1-Hour PSI:* *${max1hPsi}* (1h PM2.5: *${max1hPm25} µg/m³*)\n\n` +
+      `🗺️ *Regional Breakdown (1h PSI | 1h PM2.5):*\n` +
+      `${breakdown}\n\n` +
+      (max24hPsi ? `ℹ️ *24-Hour Rolling Peak PSI:* ${max24hPsi} (${getPsiStatus(max24hPsi)})\n\n` : '') +
       `_Live source: NEA (data.gov.sg)_`;
 
     const kb = new InlineKeyboard()
@@ -419,8 +460,8 @@ async function handleAlertsMenu(ctx: any) {
   const msg = 
     `🔔 *Push Alert Notifications Settings*\n\n` +
     `Customize automated warnings sent directly to your Telegram chat:\n\n` +
-    `• 🚨 *Haze Alert (PSI > 100):* ${psiStatus}\n` +
-    `  _Pushes when 24h PSI enters Unhealthy range._\n\n` +
+    `• 🚨 *Haze Alert (1h PSI > 100):* ${psiStatus}\n` +
+    `  _Pushes when 1-hour PSI enters Unhealthy range (1h PM2.5 > 55 µg/m³)._\n\n` +
     `• 🌧️ *Heavy Rain Alert:* ${rainStatus}\n` +
     `  _Pushes when intense downpours or weather alerts trigger._\n\n` +
     `• 🦟 *Dengue Cluster Watch:* ${dengueStatus}\n` +
@@ -428,7 +469,7 @@ async function handleAlertsMenu(ctx: any) {
     `Tap below to toggle your alerts:`;
 
   const keyboard = new InlineKeyboard()
-    .text(`Haze Alerts: ${psiStatus}`, "toggle_psi").row()
+    .text(`Haze Alerts (1h PSI): ${psiStatus}`, "toggle_psi").row()
     .text(`Rain Alerts: ${rainStatus}`, "toggle_rain").row()
     .text(`Dengue Watch: ${dengueStatus}`, "toggle_dengue").row()
     .text("🧪 Send Test Alert", "action_test_alert").row()
@@ -444,7 +485,7 @@ bot.callbackQuery("action_test_alert", async (ctx) => {
   const testMsg = 
     `🚨 *[TEST ALERT] Singapore Environmental Warning*\n\n` +
     `This is a test notification confirming your Telegram alert delivery works!\n\n` +
-    `• 🌬️ *Haze Watch:* Automated alerts trigger when 24h PSI > 100 (Unhealthy).\n` +
+    `• 🌬️ *Haze Watch:* Automated alerts trigger when 1-hour PSI > 100 (Unhealthy / 1h PM2.5 > 55 µg/m³).\n` +
     `• 🌧️ *Rain Watch:* Automated alerts trigger when heavy rain or thundery showers are detected across SG towns.\n` +
     `• 🦟 *Dengue Watch:* Automated alerts trigger when high-risk clusters (≥10 cases) are active.\n` +
     `• ⏰ *Check Frequency:* Scanned automatically via Supabase Cron.\n\n` +
