@@ -24,15 +24,49 @@ function getPsiStatus(val: number) {
   return "Hazardous 🟣";
 }
 
-function pm25ToPsi(pm25: number): number {
-  if (pm25 <= 0) return 0;
-  if (pm25 <= 12) return Math.round((pm25 / 12) * 50);
-  if (pm25 <= 55) return Math.round(50 + ((pm25 - 12) / (55 - 12)) * 50);
-  if (pm25 <= 150) return Math.round(100 + ((pm25 - 55) / (150 - 55)) * 100);
-  if (pm25 <= 250) return Math.round(200 + ((pm25 - 150) / (250 - 150)) * 100);
-  if (pm25 <= 350) return Math.round(300 + ((pm25 - 250) / (350 - 250)) * 100);
-  if (pm25 <= 500) return Math.round(400 + ((pm25 - 350) / (500 - 350)) * 100);
-  return Math.round(500 + (pm25 - 500));
+function getPm25Band(val: number) {
+  if (val <= 55) {
+    return {
+      band: 1,
+      name: "Band 1 (Normal)",
+      descriptor: "Normal",
+      badge: "Normal 🟢",
+      emoji: "🟢",
+      color: "#10b981",
+      advisory: "Normal activities can be continued for everyone."
+    };
+  }
+  if (val <= 150) {
+    return {
+      band: 2,
+      name: "Band 2 (Elevated)",
+      descriptor: "Elevated",
+      badge: "Elevated 🟠",
+      emoji: "🟠",
+      color: "#f97316",
+      advisory: "Reduce strenuous outdoor physical exertion."
+    };
+  }
+  if (val <= 250) {
+    return {
+      band: 3,
+      name: "Band 3 (High)",
+      descriptor: "High",
+      badge: "High 🔴",
+      emoji: "🔴",
+      color: "#ef4444",
+      advisory: "Vulnerable persons should avoid strenuous outdoor exertion. Others should reduce strenuous outdoor activity."
+    };
+  }
+  return {
+    band: 4,
+    name: "Band 4 (Very High)",
+    descriptor: "Very High",
+    badge: "Very High 🟣",
+    emoji: "🟣",
+    color: "#8b5cf6",
+    advisory: "Avoid strenuous outdoor physical exertion for everyone."
+  };
 }
 
 function getUvAdvisory(val: number) {
@@ -135,7 +169,7 @@ function getMainMenuKeyboard() {
   return new InlineKeyboard()
     .webApp("🗺️ Open Interactive Map & Dashboard", DASHBOARD_URL)
     .row()
-    .text("🌬️ 1h PSI & PM2.5", "action_psi")
+    .text("🌬️ 1h PM2.5 & Air Quality", "action_psi")
     .text("🌤️ 24h & 4-Day", "action_forecast")
     .row()
     .text("📍 2h Town Weather", "action_nowcast")
@@ -165,11 +199,11 @@ bot.command("start", async (ctx) => {
     `👋 *Welcome to SG Environment Live, ${name}!* 🇸🇬\n\n` +
     `Your official real-time meteorological companion powered by live *National Environment Agency (data.gov.sg)* APIs.\n\n` +
     `📌 *Quick Access Features:*\n` +
-    `• 🗺️ *Map Dashboard:* Visual overlay of PSI & weather on Singapore map\n` +
-    `• 🌬️ *Air Quality:* Real-time 1-hour PSI & PM2.5 across all 5 zones\n` +
+    `• 🗺️ *Map Dashboard:* Visual overlay of 1-hr PM2.5 & weather on Singapore map\n` +
+    `• 🌬️ *Air Quality:* Real-time 1-hour PM2.5 & NEA Bands across all 5 zones\n` +
     `• 🌤️ *Forecasts:* 2h town nowcasts, 24h outlook, & 4-day trends\n` +
     `• ☀️ *UV Monitor:* Hourly UV Index & sun protection guides\n` +
-    `• 🔔 *Alerts:* Automated push alerts for high 1h PSI & heavy rain\n\n` +
+    `• 🔔 *Alerts:* Automated push alerts for Elevated PM2.5 (Band 2+) & heavy rain\n\n` +
     `👇 *Tap any option below or open the live map:*`;
 
   await ctx.reply(welcomeText, {
@@ -225,32 +259,27 @@ async function handlePsiRequest(ctx: any) {
       west: "🏭 West"
     };
 
-    const psi1h: Record<string, number> = {};
-    if (pm25_1h) {
-      for (const r of regions) {
-        psi1h[r] = pm25ToPsi(pm25_1h[r] ?? 0);
-      }
-    }
+    const max1hPm25 = pm25_1h ? Math.max(...regions.map(r => pm25_1h[r] ?? 0)) : 0;
+    const peakBand = getPm25Band(max1hPm25);
 
     const psi24 = psi24Readings?.psi_twenty_four_hourly;
-    const max1hPsi = pm25_1h ? Math.max(...regions.map(r => psi1h[r] ?? 0)) : (psi24 ? Math.max(psi24.central, psi24.north, psi24.south, psi24.east, psi24.west) : 0);
-    const max1hPm25 = pm25_1h ? Math.max(...regions.map(r => pm25_1h[r] ?? 0)) : 0;
     const max24hPsi = psi24 ? Math.max(psi24.central, psi24.north, psi24.south, psi24.east, psi24.west) : null;
 
     const breakdown = regions.map(r => {
-      const pVal = psi1h[r] ?? (psi24 ? psi24[r] : 0);
-      const pmVal = pm25_1h ? `${pm25_1h[r]} µg/m³` : (psi24Readings?.pm25_twenty_four_hourly ? `${psi24Readings.pm25_twenty_four_hourly[r]} µg/m³ (24h)` : '--');
-      return `• ${regionLabels[r]}: 1h PSI *${pVal}* (${getPsiStatus(pVal)}) | 1h PM2.5: ${pmVal}`;
+      const pmVal = pm25_1h ? (pm25_1h[r] ?? 0) : 0;
+      const band = getPm25Band(pmVal);
+      return `• ${regionLabels[r]}: *${pmVal} µg/m³* — ${band.name} ${band.emoji}`;
     }).join("\n");
 
     const msg = 
-      `🌬️ *Singapore 1-Hour PSI & Air Quality*\n\n` +
-      `📊 *Overall Air Quality:* ${getPsiStatus(max1hPsi)}\n` +
-      `🔥 *Peak 1-Hour PSI:* *${max1hPsi}* (1h PM2.5: *${max1hPm25} µg/m³*)\n\n` +
-      `🗺️ *Regional Breakdown (1h PSI | 1h PM2.5):*\n` +
+      `🌬️ *Singapore 1-Hour PM2.5 (Air Quality)*\n\n` +
+      `📊 *Overall Status:* *${peakBand.name}* ${peakBand.emoji}\n` +
+      `🔥 *Peak 1-Hour PM2.5:* *${max1hPm25} µg/m³*\n\n` +
+      `🗺️ *Regional 1-Hr PM2.5 (Official NEA Bands):*\n` +
       `${breakdown}\n\n` +
-      (max24hPsi ? `ℹ️ *24-Hour Rolling Peak PSI:* ${max24hPsi} (${getPsiStatus(max24hPsi)})\n\n` : '') +
-      `_Live source: NEA (data.gov.sg)_`;
+      `💡 *Health Advisory:* ${peakBand.advisory}\n\n` +
+      (max24hPsi ? `ℹ️ *24-Hour Rolling Peak PSI Reference:* ${max24hPsi} (${getPsiStatus(max24hPsi)})\n\n` : '') +
+      `_Live source: NEA (haze.gov.sg / data.gov.sg)_`;
 
     const kb = new InlineKeyboard()
       .webApp("🗺️ View on Singapore Map", DASHBOARD_URL)
@@ -260,7 +289,7 @@ async function handlePsiRequest(ctx: any) {
     await ctx.reply(msg, { parse_mode: "Markdown", reply_markup: kb });
   } catch (error) {
     console.error("Error in handlePsiRequest:", error);
-    await ctx.reply("Failed to fetch PSI data. Please try again later.");
+    await ctx.reply("Failed to fetch Air Quality data. Please try again later.");
   }
 }
 
@@ -460,8 +489,8 @@ async function handleAlertsMenu(ctx: any) {
   const msg = 
     `🔔 *Push Alert Notifications Settings*\n\n` +
     `Customize automated warnings sent directly to your Telegram chat:\n\n` +
-    `• 🚨 *Haze Alert (1h PSI > 100):* ${psiStatus}\n` +
-    `  _Pushes when 1-hour PSI enters Unhealthy range (1h PM2.5 > 55 µg/m³)._\n\n` +
+    `• 🚨 *Haze Alert (1h PM2.5 > 55 µg/m³):* ${psiStatus}\n` +
+    `  _Pushes when 1-hour PM2.5 enters Band 2 Elevated (or higher)._\n\n` +
     `• 🌧️ *Heavy Rain Alert:* ${rainStatus}\n` +
     `  _Pushes when intense downpours or weather alerts trigger._\n\n` +
     `• 🦟 *Dengue Cluster Watch:* ${dengueStatus}\n` +
@@ -469,7 +498,7 @@ async function handleAlertsMenu(ctx: any) {
     `Tap below to toggle your alerts:`;
 
   const keyboard = new InlineKeyboard()
-    .text(`Haze Alerts (1h PSI): ${psiStatus}`, "toggle_psi").row()
+    .text(`Haze Alerts (Band 2+): ${psiStatus}`, "toggle_psi").row()
     .text(`Rain Alerts: ${rainStatus}`, "toggle_rain").row()
     .text(`Dengue Watch: ${dengueStatus}`, "toggle_dengue").row()
     .text("🧪 Send Test Alert", "action_test_alert").row()
@@ -485,7 +514,7 @@ bot.callbackQuery("action_test_alert", async (ctx) => {
   const testMsg = 
     `🚨 *[TEST ALERT] Singapore Environmental Warning*\n\n` +
     `This is a test notification confirming your Telegram alert delivery works!\n\n` +
-    `• 🌬️ *Haze Watch:* Automated alerts trigger when 1-hour PSI > 100 (Unhealthy / 1h PM2.5 > 55 µg/m³).\n` +
+    `• 🌬️ *Haze Watch:* Automated alerts trigger when 1-hour PM2.5 > 55 µg/m³ (Band 2 Elevated or higher).\n` +
     `• 🌧️ *Rain Watch:* Automated alerts trigger when heavy rain or thundery showers are detected across SG towns.\n` +
     `• 🦟 *Dengue Watch:* Automated alerts trigger when high-risk clusters (≥10 cases) are active.\n` +
     `• ⏰ *Check Frequency:* Scanned automatically via Supabase Cron.\n\n` +
