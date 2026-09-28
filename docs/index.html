@@ -88,12 +88,12 @@
       <div class="flex items-center justify-between px-1">
         <div class="flex items-center gap-1.5">
           <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Map Overlay</span>
-          <span id="map-layer-indicator" class="text-[11px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">Air Quality (PSI)</span>
+          <span id="map-layer-indicator" class="text-[11px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">1-Hour PM2.5 (Air Quality)</span>
         </div>
         <!-- Map Layer Toggle Buttons -->
         <div class="flex bg-slate-100 p-0.5 rounded-xl text-xs font-semibold">
           <button id="btn-layer-psi" onclick="switchMapLayer('psi')" class="px-2 py-1 rounded-lg bg-white text-blue-600 shadow-xs transition">
-            🌬️ PSI
+            🌬️ 1h PM2.5
           </button>
           <button id="btn-layer-weather" onclick="switchMapLayer('weather')" class="px-2 py-1 rounded-lg text-slate-500 transition">
             🌦️ Weather
@@ -111,11 +111,11 @@
       <div id="map" class="shadow-inner border border-slate-100"></div>
 
       <!-- Map Footer Info & Legend -->
-      <div id="psi-legend" class="flex items-center justify-between px-2 pt-1 text-[11px] font-medium text-slate-600">
-        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> 0-50 Good</span>
-        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span> 51-100 Mod</span>
-        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-orange-500"></span> 101-200 Unhealthy</span>
-        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-rose-600"></span> 201+ Very Unhealthy</span>
+      <div id="psi-legend" class="flex items-center justify-between px-2 pt-1 text-[11px] font-semibold text-slate-600">
+        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> 0-55 Normal</span>
+        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-orange-500"></span> 56-150 Elevated</span>
+        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span> 151-250 High</span>
+        <span class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full bg-purple-600"></span> ≥251 Very High</span>
       </div>
       <div id="dengue-legend" class="hidden flex items-center justify-between px-2 pt-1 text-[11px] font-semibold text-slate-700">
         <span class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-red-600 border border-white shadow-xs"></span> High Risk (≥10)</span>
@@ -147,7 +147,7 @@
     <!-- Navigation Feature Tabs -->
     <div class="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
       <button onclick="setTab('psi')" id="tab-btn-psi" class="tab-pill active px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap bg-blue-600 text-white shadow-xs transition">
-        🌬️ Air Quality & Haze
+        🌬️ 1h PM2.5 & Air Quality
       </button>
       <button onclick="setTab('towns')" id="tab-btn-towns" class="tab-pill px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap bg-white text-slate-600 border border-slate-200/80 shadow-xs transition">
         📍 Town Weather (47)
@@ -170,10 +170,10 @@
       <div class="bg-white rounded-2xl p-5 shadow-sm border border-slate-200/80 space-y-3">
         <div class="flex justify-between items-start">
           <div>
-            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Singapore 1-Hour Peak PSI</span>
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Singapore 1-Hour Peak PM2.5</span>
             <div class="flex items-baseline gap-2 mt-1">
               <span id="hero-psi-val" class="text-5xl font-extrabold text-slate-900 tracking-tight">--</span>
-              <span class="text-sm font-semibold text-slate-400">1h PSI</span>
+              <span class="text-sm font-semibold text-slate-400">µg/m³</span>
             </div>
           </div>
           <span id="hero-status-badge" class="px-3.5 py-1.5 rounded-full text-xs font-bold bg-slate-100 text-slate-600 shadow-2xs">
@@ -187,7 +187,7 @@
 
         <!-- 5 Region Breakdown -->
         <div class="pt-2 border-t border-slate-100">
-          <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Regional 1-Hour PSI & PM2.5</p>
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Regional 1-Hour PM2.5 (Official NEA Bands)</p>
           <div class="grid grid-cols-5 gap-2 text-center" id="region-cards">
             <!-- Region items dynamically injected -->
           </div>
@@ -470,23 +470,53 @@
     };
 
     // ── Helpers ─────────────────────────────────────────────────────────────────
-    function getPsiColor(val) {
-      if (val <= 50) return { bg: '#10b981', label: 'Good 🟢', badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
-      if (val <= 100) return { bg: '#f59e0b', label: 'Moderate 🟡', badgeClass: 'bg-amber-100 text-amber-800 border-amber-200' };
-      if (val <= 200) return { bg: '#f97316', label: 'Unhealthy 🟠', badgeClass: 'bg-orange-100 text-orange-800 border-orange-200' };
-      if (val <= 300) return { bg: '#ef4444', label: 'Very Unhealthy 🔴', badgeClass: 'bg-rose-100 text-rose-800 border-rose-200' };
-      return { bg: '#8b5cf6', label: 'Hazardous 🟣', badgeClass: 'bg-purple-100 text-purple-800 border-purple-200' };
+    function getPm25Band(val) {
+      if (val <= 55) {
+        return {
+          band: 1,
+          name: 'Band 1 (Normal)',
+          descriptor: 'Normal',
+          bg: '#10b981',
+          badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+          advisory: '🟢 Normal air quality (Band 1). Normal outdoor activities can be enjoyed by everyone.'
+        };
+      }
+      if (val <= 150) {
+        return {
+          band: 2,
+          name: 'Band 2 (Elevated)',
+          descriptor: 'Elevated',
+          bg: '#f97316',
+          badgeClass: 'bg-orange-100 text-orange-800 border-orange-200',
+          advisory: '🟠 Elevated 1-hour PM2.5 haze (Band 2). Reduce strenuous outdoor physical exertion.'
+        };
+      }
+      if (val <= 250) {
+        return {
+          band: 3,
+          name: 'Band 3 (High)',
+          descriptor: 'High',
+          bg: '#ef4444',
+          badgeClass: 'bg-rose-100 text-rose-800 border-rose-200',
+          advisory: '🔴 High 1-hour PM2.5 haze (Band 3). Vulnerable persons should avoid strenuous outdoor exertion. Others should reduce strenuous outdoor activity.'
+        };
+      }
+      return {
+        band: 4,
+        name: 'Band 4 (Very High)',
+        descriptor: 'Very High',
+        bg: '#8b5cf6',
+        badgeClass: 'bg-purple-100 text-purple-800 border-purple-200',
+        advisory: '🟣 Very High / Hazardous 1-hour PM2.5 (Band 4). Everyone should avoid strenuous outdoor physical exertion.'
+      };
     }
 
-    function pm25ToPsi(pm25) {
-      if (!pm25 || pm25 <= 0) return 0;
-      if (pm25 <= 12) return Math.round((pm25 / 12) * 50);
-      if (pm25 <= 55) return Math.round(50 + ((pm25 - 12) / (55 - 12)) * 50);
-      if (pm25 <= 150) return Math.round(100 + ((pm25 - 55) / (150 - 55)) * 100);
-      if (pm25 <= 250) return Math.round(200 + ((pm25 - 150) / (250 - 150)) * 100);
-      if (pm25 <= 350) return Math.round(300 + ((pm25 - 250) / (350 - 250)) * 100);
-      if (pm25 <= 500) return Math.round(400 + ((pm25 - 350) / (500 - 350)) * 100);
-      return Math.round(500 + (pm25 - 500));
+    function getPsiStatus(val) {
+      if (val <= 50) return "Good 🟢";
+      if (val <= 100) return "Moderate 🟡";
+      if (val <= 200) return "Unhealthy 🟠";
+      if (val <= 300) return "Very Unhealthy 🔴";
+      return "Hazardous 🟣";
     }
 
     function getWeatherEmoji(text) {
@@ -556,7 +586,7 @@
       if (layer === 'psi') {
         map.addLayer(psiLayerGroup);
         btnPsi.className = "px-2 py-1 rounded-lg bg-white text-blue-600 shadow-xs transition";
-        indicator.textContent = "Air Quality (PSI)";
+        indicator.textContent = "1-Hour PM2.5 (Air Quality)";
         indicator.className = "text-[11px] font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full";
         legend.classList.remove('hidden');
       } else if (layer === 'weather') {
@@ -626,7 +656,7 @@
       }
     }
 
-    // 1. PSI & Air Quality
+    // 1. Air Quality (1-Hour PM2.5 & NEA Bands)
     async function loadPsiData() {
       const [pm25Res, psiRes] = await Promise.all([
         fetch("https://api-open.data.gov.sg/v2/real-time/api/pm25"),
@@ -645,7 +675,6 @@
       psiLayerGroup.clearLayers();
 
       const regions = ['central', 'north', 'south', 'east', 'west'];
-      let max1hPsi = 0;
       let max1hPm25 = 0;
       let max24hPsi = 0;
       let regionCardsHtml = '';
@@ -653,26 +682,24 @@
       regions.forEach(r => {
         const p1h = pm25_1h[r] || 0;
         if (p1h > max1hPm25) max1hPm25 = p1h;
-        const val1h = pm25ToPsi(p1h);
-        if (val1h > max1hPsi) max1hPsi = val1h;
 
         const val24 = psi24[r] || 0;
         if (val24 > max24hPsi) max24hPsi = val24;
 
-        const colorInfo = getPsiColor(val1h);
+        const bandInfo = getPm25Band(p1h);
         const coord = REGION_COORDS[r];
 
         const circle = L.circle([coord.lat, coord.lng], {
-          color: colorInfo.bg,
-          fillColor: colorInfo.bg,
-          fillOpacity: 0.3,
+          color: bandInfo.bg,
+          fillColor: bandInfo.bg,
+          fillOpacity: 0.25,
           radius: 3800,
           weight: 2
         }).addTo(psiLayerGroup);
 
         const icon = L.divIcon({
           className: '',
-          html: `<div class="custom-marker" style="background-color: ${colorInfo.bg}; color: white; width: 34px; height: 34px; font-size: 13px;">${val1h}</div>`,
+          html: `<div class="custom-marker" style="background-color: ${bandInfo.bg}; color: white; width: 34px; height: 34px; font-size: 13px;">${p1h}</div>`,
           iconSize: [34, 34],
           iconAnchor: [17, 17]
         });
@@ -682,11 +709,10 @@
         const popup = `
           <div class="p-1 space-y-1">
             <h4 class="font-bold text-sm text-slate-900">${coord.name}</h4>
-            <p class="text-xs font-semibold" style="color: ${colorInfo.bg}">${colorInfo.label}</p>
+            <p class="text-xs font-semibold" style="color: ${bandInfo.bg}">${bandInfo.name}</p>
             <div class="text-xs text-slate-600 pt-1 border-t border-slate-100 space-y-0.5">
-              <p>• <strong>1-Hour PSI:</strong> ${val1h}</p>
               <p>• <strong>1-Hour PM2.5:</strong> ${p1h} µg/m³</p>
-              <p>• <strong>24h Rolling PSI:</strong> ${val24}</p>
+              <p>• <strong>24h Rolling PSI:</strong> ${val24} (${getPsiStatus(val24)})</p>
               <p>• <strong>24h PM2.5:</strong> ${pm25_24[r]} µg/m³</p>
               <p>• <strong>PM10:</strong> ${pm10[r]} µg/m³</p>
             </div>
@@ -698,33 +724,30 @@
         regionCardsHtml += `
           <div class="bg-slate-50 p-2 rounded-xl border border-slate-100 text-center">
             <span class="text-[10px] uppercase font-bold text-slate-400 block">${r.slice(0, 4)}</span>
-            <span class="text-sm font-extrabold" style="color: ${colorInfo.bg}">${val1h}</span>
-            <span class="text-[9px] text-slate-400 block mt-0.5">${p1h}µg (1h)</span>
+            <span class="text-sm font-extrabold" style="color: ${bandInfo.bg}">${p1h}</span>
+            <span class="text-[9px] text-slate-400 block mt-0.5">Band ${bandInfo.band}</span>
           </div>
         `;
       });
 
       document.getElementById('region-cards').innerHTML = regionCardsHtml;
-      document.getElementById('hero-psi-val').textContent = max1hPsi;
+      document.getElementById('hero-psi-val').textContent = max1hPm25;
 
-      const maxInfo = getPsiColor(max1hPsi);
+      const peakBandInfo = getPm25Band(max1hPm25);
       const heroBadge = document.getElementById('hero-status-badge');
-      heroBadge.textContent = maxInfo.label;
-      heroBadge.className = `px-3.5 py-1.5 rounded-full text-xs font-bold border shadow-2xs ${maxInfo.badgeClass}`;
+      heroBadge.textContent = peakBandInfo.name;
+      heroBadge.className = `px-3.5 py-1.5 rounded-full text-xs font-bold border shadow-2xs ${peakBandInfo.badgeClass}`;
 
       const adv = document.getElementById('health-advisory');
-      if (max1hPsi <= 50) {
-        adv.textContent = "🟢 Good air quality. Normal outdoor activities can be enjoyed by everyone.";
+      adv.textContent = peakBandInfo.advisory;
+      if (peakBandInfo.band === 1) {
         adv.className = "p-3 bg-emerald-50 border border-emerald-100 rounded-xl text-xs text-emerald-900 leading-relaxed font-medium";
-      } else if (max1hPsi <= 100) {
-        adv.textContent = "🟡 Moderate air quality (Normal PM2.5). Normal activities can continue for all individuals.";
-        adv.className = "p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-900 leading-relaxed font-medium";
-      } else if (max1hPsi <= 200) {
-        adv.textContent = "🟠 Elevated 1-hour haze conditions (Unhealthy). Vulnerable groups, elderly, and children should reduce strenuous outdoor activity.";
+      } else if (peakBandInfo.band === 2) {
         adv.className = "p-3 bg-orange-50 border border-orange-100 rounded-xl text-xs text-orange-900 leading-relaxed font-medium";
+      } else if (peakBandInfo.band === 3) {
+        adv.className = "p-3 bg-rose-50 border border-rose-100 rounded-xl text-xs text-rose-900 leading-relaxed font-medium";
       } else {
-        adv.textContent = "🔴 High / Hazardous haze conditions. Everyone should minimize outdoor activities.";
-        adv.className = "p-3 bg-red-50 border border-red-100 rounded-xl text-xs text-red-900 leading-relaxed font-medium";
+        adv.className = "p-3 bg-purple-50 border border-purple-100 rounded-xl text-xs text-purple-900 leading-relaxed font-medium";
       }
 
       document.getElementById('pm25-1h-stat').textContent = max1hPm25 + ' µg/m³';
