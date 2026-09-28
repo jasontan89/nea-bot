@@ -9,25 +9,67 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+function getPsiStatus(val: number) {
+  if (val <= 50) return "Good 🟢";
+  if (val <= 100) return "Moderate 🟡";
+  if (val <= 200) return "Unhealthy 🟠";
+  if (val <= 300) return "Very Unhealthy 🔴";
+  return "Hazardous 🟣";
+}
+
+function pm25ToPsi(pm25: number): number {
+  if (pm25 <= 0) return 0;
+  if (pm25 <= 12) return Math.round((pm25 / 12) * 50);
+  if (pm25 <= 55) return Math.round(50 + ((pm25 - 12) / (55 - 12)) * 50);
+  if (pm25 <= 150) return Math.round(100 + ((pm25 - 55) / (150 - 55)) * 100);
+  if (pm25 <= 250) return Math.round(200 + ((pm25 - 150) / (250 - 150)) * 100);
+  if (pm25 <= 350) return Math.round(300 + ((pm25 - 250) / (350 - 250)) * 100);
+  if (pm25 <= 500) return Math.round(400 + ((pm25 - 350) / (500 - 350)) * 100);
+  return Math.round(500 + (pm25 - 500));
+}
+
 Deno.serve(async (req) => {
   try {
-    // 1. Check PSI Data & Alert
-    const psiRes = await fetch("https://api-open.data.gov.sg/v2/real-time/api/psi");
-    const psiData = await psiRes.json();
-    const readings = psiData.data.items[0].readings.psi_twenty_four_hourly;
-    const psi = Math.max(readings.central, readings.north, readings.south, readings.east, readings.west);
-    
-    // We send alerts if Peak 24h PSI > 100 (Unhealthy)
-    if (psi > 100) {
+    // 1. Check 1-Hour PSI & PM2.5 Data & Alert
+    const pm25Res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/pm25");
+    const pm25Data = await pm25Res.json();
+    const pm25OneHourly = pm25Data.data.items[0].readings.pm25_one_hourly;
+
+    const regions = [
+      { key: "central", name: "Central", val: pm25OneHourly.central },
+      { key: "north", name: "North", val: pm25OneHourly.north },
+      { key: "south", name: "South", val: pm25OneHourly.south },
+      { key: "east", name: "East", val: pm25OneHourly.east },
+      { key: "west", name: "West", val: pm25OneHourly.west },
+    ];
+
+    const regionPsiList = regions.map(r => ({
+      ...r,
+      psi: pm25ToPsi(r.val)
+    }));
+
+    regionPsiList.sort((a, b) => b.psi - a.psi);
+    const topRegion = regionPsiList[0];
+    const peak1hPsi = topRegion.psi;
+    const peak1hPm25 = topRegion.val;
+
+    // We send alerts if Peak 1-hour PSI > 100 (Unhealthy / PM2.5 > 55 µg/m³)
+    if (peak1hPsi > 100) {
       const { data: psiUsers } = await supabase
         .from('user_subscriptions')
         .select('chat_id')
         .eq('psi_alert', true);
         
       if (psiUsers && psiUsers.length > 0) {
+        const regionalBreakdown = regionPsiList
+          .map(r => `• *${r.name}:* 1h PSI *${r.psi}* (${getPsiStatus(r.psi)}) | PM2.5: ${r.val} µg/m³`)
+          .join("\n");
+
         const msg = 
-          `🚨 *SINGAPORE PSI / HAZE WARNING* 🚨\n\n` +
-          `Peak 24-hr PSI has reached *${psi}* (Unhealthy Air Quality).\n\n` +
+          `🚨 *SINGAPORE 1-HOUR PSI / HAZE WARNING* 🚨\n\n` +
+          `Peak 1-hour PSI has reached *${peak1hPsi}* (${getPsiStatus(peak1hPsi)}) in the *${topRegion.name}* region (1h PM2.5: *${peak1hPm25} µg/m³*).\n\n` +
+          `🗺️ *Regional Breakdown:*\n` +
+          `${regionalBreakdown}\n\n` +
           `💡 *Health Advisory:* Vulnerable individuals (elderly, pregnant women, children, and those with chronic heart/lung disease) should reduce strenuous outdoor activity.`;
         for (const user of psiUsers) {
           try {
@@ -132,7 +174,8 @@ Deno.serve(async (req) => {
     
     return new Response(JSON.stringify({ 
       success: true, 
-      peakPsi: psi, 
+      peak1hPsi: peak1hPsi, 
+      peak1hPm25: peak1hPm25,
       rainTownsCount: rainTowns.length,
       highRiskDengueCount: highRiskCount
     }), {
