@@ -90,10 +90,14 @@ function getWeatherEmoji(text: string) {
 
 // ── API Fetchers ─────────────────────────────────────────────────────────────
 
-async function fetch1hPm25(): Promise<Record<string, number>> {
+async function fetch1hPm25(): Promise<{ readings: Record<string, number>; timestamp?: string }> {
   const res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/pm25");
   const data = await res.json();
-  return data.data.items[0].readings.pm25_one_hourly;
+  const item = data.data?.items?.[0];
+  return {
+    readings: item?.readings?.pm25_one_hourly ?? {},
+    timestamp: item?.timestamp
+  };
 }
 
 async function fetchPsi() {
@@ -245,10 +249,18 @@ bot.command("tides", async (ctx) => {
 
 async function handlePsiRequest(ctx: any) {
   try {
-    const [pm25_1h, psi24Readings] = await Promise.all([
+    const [pm25Result, psi24Readings] = await Promise.all([
       fetch1hPm25().catch(() => null),
       fetchPsi().catch(() => null)
     ]);
+
+    const pm25_1h = pm25Result?.readings;
+    const timeStr = pm25Result?.timestamp ? new Date(pm25Result.timestamp).toLocaleTimeString("en-SG", {
+      timeZone: "Asia/Singapore",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true
+    }) : "";
 
     const regions = ["central", "north", "south", "east", "west"] as const;
     const regionLabels: Record<string, string> = {
@@ -277,7 +289,8 @@ async function handlePsiRequest(ctx: any) {
       `🔥 *Peak 1-Hour PM2.5:* *${max1hPm25} µg/m³*\n\n` +
       `🗺️ *Regional 1-Hr PM2.5 (Official NEA Bands):*\n` +
       `${breakdown}\n\n` +
-      `💡 *Health Advisory:* ${peakBand.advisory}\n\n` +
+      `💡 *Health Advisory:* ${peakBand.advisory}\n` +
+      (timeStr ? `🕒 *Reading as of:* ${timeStr}\n\n` : '\n') +
       (max24hPsi ? `ℹ️ *24-Hour Rolling Peak PSI Reference:* ${max24hPsi} (${getPsiStatus(max24hPsi)})\n\n` : '') +
       `_Live source: NEA (haze.gov.sg / data.gov.sg)_`;
 
@@ -357,10 +370,10 @@ async function handleNowcastRequest(ctx: any) {
 
     for (const f of filtered) {
       const emoji = getWeatherEmoji(f.forecast);
-      msg += `• *${f.area}:* ${emoji} ${f.forecast}\n`;
+      msg += `• *${f.area}:* ${emoji} ${f.forecast}\\n`;
     }
 
-    msg += `\n💡 _Open the interactive map to see all 47 locations islandwide._\n\n`;
+    msg += `\\n💡 _Open the interactive map to see all 47 locations islandwide._\n\n`;
     msg += `_Live source: NEA (data.gov.sg)_`;
 
     const kb = new InlineKeyboard()
@@ -401,7 +414,7 @@ async function handleUvRequest(ctx: any) {
       msg += `• ${timeStr}: UV ${item.value}\n`;
     }
 
-    msg += `\n_Live source: NEA (data.gov.sg)_`;
+    msg += `\\n_Live source: NEA (data.gov.sg)_`;
 
     const kb = new InlineKeyboard()
       .webApp("📊 Open Dashboard", DASHBOARD_URL)
@@ -459,7 +472,7 @@ async function handleTidesRequest(ctx: any) {
       msg += `• ${timeStr} — *${typeStr}* (${t.height.toFixed(1)}m)${badge}\n`;
     }
 
-    msg += `\n💡 *Note:* Heights are above Chart Datum. Essential for fishing, coastal walks & watersports.`;
+    msg += `\\n💡 *Note:* Heights are above Chart Datum. Essential for fishing, coastal walks & watersports.`;
 
     const kb = new InlineKeyboard()
       .webApp("📊 Open Dashboard & Tides", DASHBOARD_URL)
@@ -550,27 +563,22 @@ bot.callbackQuery("action_psi", async (ctx) => {
 });
 
 bot.callbackQuery("action_forecast", async (ctx) => {
-  await ctx.answerCallbackQuery();
   await handleForecastRequest(ctx);
 });
 
 bot.callbackQuery("action_nowcast", async (ctx) => {
-  await ctx.answerCallbackQuery();
   await handleNowcastRequest(ctx);
 });
 
 bot.callbackQuery("action_uv", async (ctx) => {
-  await ctx.answerCallbackQuery();
   await handleUvRequest(ctx);
 });
 
 bot.callbackQuery("action_tides", async (ctx) => {
-  await ctx.answerCallbackQuery();
   await handleTidesRequest(ctx);
 });
 
 bot.callbackQuery("action_alerts", async (ctx) => {
-  await ctx.answerCallbackQuery();
   await handleAlertsMenu(ctx);
 });
 
