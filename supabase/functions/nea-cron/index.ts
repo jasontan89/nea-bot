@@ -49,9 +49,22 @@ function getPm25Band(val: number) {
 Deno.serve(async (req) => {
   try {
     // 1. Check 1-Hour PM2.5 Data & Alert (Official NEA 4-Band System)
-    const pm25Res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/pm25");
-    const pm25Data = await pm25Res.json();
-    const pm25OneHourly = pm25Data.data.items[0].readings.pm25_one_hourly;
+    let pm25Res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/pm25");
+    let pm25Data = await pm25Res.json();
+    let pm25Item = pm25Data.data?.items?.[0];
+
+    // If data timestamp is older than 50 minutes (meaning the API refresh is slightly delayed past the top of the hour),
+    // wait 10 seconds and re-fetch once to ensure we get the fresh hour dataset.
+    const itemTimestamp = new Date(pm25Item?.timestamp || 0).getTime();
+    if (itemTimestamp > 0 && (Date.now() - itemTimestamp) > 50 * 60 * 1000) {
+      console.log("NEA API data is lagging; waiting 10s to re-fetch...");
+      await new Promise((r) => setTimeout(r, 10000));
+      pm25Res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/pm25");
+      pm25Data = await pm25Res.json();
+      pm25Item = pm25Data.data?.items?.[0];
+    }
+
+    const pm25OneHourly = pm25Item?.readings?.pm25_one_hourly ?? {};
 
     const regions = [
       { key: "central", name: "Central", val: pm25OneHourly.central },
@@ -83,12 +96,21 @@ Deno.serve(async (req) => {
           .map(r => `• *${r.name}:* *${r.val} µg/m³* — ${r.bandInfo.name} ${r.bandInfo.emoji}`)
           .join("\n");
 
+        const readingTime = pm25Item?.timestamp ? new Date(pm25Item.timestamp).toLocaleTimeString("en-SG", {
+          timeZone: "Asia/Singapore",
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true
+        }) : "";
+
         const msg = 
           `🚨 *SINGAPORE 1-HOUR PM2.5 / HAZE WARNING* 🚨\n\n` +
           `Peak 1-Hour PM2.5 has reached *${peak1hPm25} µg/m³* (*${peakBand.name}* ${peakBand.emoji}) in the *${topRegion.name}* region.\n\n` +
           `🗺️ *Regional Breakdown (Official NEA Bands):*\n` +
           `${regionalBreakdown}\n\n` +
-          `💡 *Health Advisory:* ${peakBand.advisory}`;
+          `💡 *Health Advisory:* ${peakBand.advisory}\n` +
+          (readingTime ? `🕒 *Reading Time:* ${readingTime}\n\n` : '\n') +
+          `_Live source: NEA (haze.gov.sg)_`;
         for (const user of psiUsers) {
           try {
             await bot.api.sendMessage(user.chat_id, msg, { parse_mode: "Markdown" });
