@@ -1,10 +1,13 @@
-Deno.serve(async (req) => {
+Deno.serve(async (_req) => {
   const html = `
     <!DOCTYPE html>
     <html lang="en">
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta http-equiv="X-Content-Type-Options" content="nosniff">
+      <meta name="referrer" content="strict-origin-when-cross-origin">
+      <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' https: data:;">
       <title>NEA Dashboard</title>
       <script src="https://cdn.tailwindcss.com"></script>
       <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -28,17 +31,27 @@ Deno.serve(async (req) => {
 
       <script>
         // Init Telegram Mini App
-        const tg = window.Telegram.WebApp;
-        tg.expand();
+        const tg = window.Telegram?.WebApp;
+        if (tg) tg.expand();
+
+        function escapeHtml(str) {
+          if (str === null || str === undefined) return '';
+          return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        }
 
         async function fetchData() {
           try {
             // Fetch 1h PM2.5 (Official NEA Bands)
             const pm25Res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/pm25");
             const pm25Data = await pm25Res.json();
-            const pm25OneHourly = pm25Data.data.items[0].readings.pm25_one_hourly;
+            const pm25OneHourly = pm25Data.data?.items?.[0]?.readings?.pm25_one_hourly ?? {};
             const values = Object.values(pm25OneHourly);
-            const maxPm25 = Math.max(...values);
+            const maxPm25 = values.length > 0 ? Math.max(...values) : 0;
 
             let bandName = "Band 1 (Normal)";
             let color = "text-emerald-500";
@@ -51,37 +64,37 @@ Deno.serve(async (req) => {
               <div class="flex items-center justify-between mb-4">
                 <div>
                   <p class="text-sm text-gray-500">Peak 1-Hour PM2.5</p>
-                  <p class="text-4xl font-black \\\${color}">\\\${maxPm25} <span class="text-lg font-bold text-gray-400">µg/m³</span></p>
+                  <p class="text-4xl font-black \\\${escapeHtml(color)}">\\\${escapeHtml(maxPm25)} <span class="text-lg font-bold text-gray-400">µg/m³</span></p>
                 </div>
                 <div class="text-right">
                   <p class="text-sm text-gray-500">Air Quality</p>
-                  <p class="text-lg font-bold \\\${color}">\\\${bandName}</p>
+                  <p class="text-lg font-bold \\\${escapeHtml(color)}">\\\${escapeHtml(bandName)}</p>
                 </div>
               </div>
-              <p class="text-xs text-gray-600">\\\${advisory}</p>
+              <p class="text-xs text-gray-600">\\\${escapeHtml(advisory)}</p>
             \`;
 
             // Fetch Weather
             const weatherRes = await fetch("https://api-open.data.gov.sg/v2/real-time/api/twenty-four-hr-forecast");
             const weatherData = await weatherRes.json();
-            const forecast = weatherData.data.records[0].general;
+            const forecast = weatherData.data?.records?.[0]?.general ?? {};
             
             document.getElementById('weather-container').innerHTML = \`
-              <p class="text-lg font-semibold text-blue-600 mb-2">\${forecast.forecast}</p>
+              <p class="text-lg font-semibold text-blue-600 mb-2">\\\${escapeHtml(forecast.forecast ?? "Fair")}</p>
               <div class="grid grid-cols-2 gap-4">
                 <div class="bg-blue-50 p-3 rounded-lg">
                   <p class="text-xs text-gray-500 uppercase">Temperature</p>
-                  <p class="text-lg font-bold">\${forecast.temperature.low}° - \${forecast.temperature.high}°C</p>
+                  <p class="text-lg font-bold">\\\${escapeHtml(forecast.temperature?.low ?? "--")}° - \\\${escapeHtml(forecast.temperature?.high ?? "--")}°C</p>
                 </div>
                 <div class="bg-blue-50 p-3 rounded-lg">
                   <p class="text-xs text-gray-500 uppercase">Humidity</p>
-                  <p class="text-lg font-bold">\${forecast.relative_humidity.low}% - \${forecast.relative_humidity.high}%</p>
+                  <p class="text-lg font-bold">\\\${escapeHtml(forecast.relative_humidity?.low ?? forecast.relativeHumidity?.low ?? "--")}% - \\\${escapeHtml(forecast.relative_humidity?.high ?? forecast.relativeHumidity?.high ?? "--")}%</p>
                 </div>
               </div>
             \`;
 
           } catch (err) {
-            console.error(err);
+            console.error("Dashboard fetch error:", err);
             document.getElementById('psi-container').innerHTML = '<p class="text-red-500">Failed to load data.</p>';
           }
         }
@@ -95,7 +108,9 @@ Deno.serve(async (req) => {
   return new Response(html, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
-      "Access-Control-Allow-Origin": "*",
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "strict-origin-when-cross-origin",
+      "Content-Security-Policy": "default-src 'self' 'unsafe-inline' https: data:;",
     },
   });
 });

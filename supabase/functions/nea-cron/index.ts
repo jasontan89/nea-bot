@@ -1,13 +1,21 @@
 import { Bot } from "npm:grammy@^1";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
-const token = Deno.env.get("NEA_BOT_TELEGRAM_BOT_TOKEN");
-if (!token) throw new Error("NEA_BOT_TELEGRAM_BOT_TOKEN is not set");
-const bot = new Bot(token);
+const botToken = Deno.env.get("NEA_BOT_TELEGRAM_BOT_TOKEN");
+if (!botToken) throw new Error("NEA_BOT_TELEGRAM_BOT_TOKEN is not set");
+const bot = new Bot(botToken);
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const supabase = createClient(supabaseUrl, supabaseKey);
+
+const cronSecret = Deno.env.get("NEA_CRON_SECRET") ?? Deno.env.get("CRON_SECRET");
+const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+
+function escapeMd(text: string | number | undefined | null): string {
+  if (text === null || text === undefined) return "";
+  return String(text).replace(/[_*[\]`]/g, "\\$&");
+}
 
 function getPm25Band(val: number) {
   if (val <= 55) {
@@ -46,15 +54,45 @@ function getPm25Band(val: number) {
   };
 }
 
+async function sendBroadcast(
+  users: { chat_id: number | string }[],
+  message: string
+) {
+  const delayMs = 35;
+  for (const user of users) {
+    try {
+      await bot.api.sendMessage(user.chat_id, message, { parse_mode: "Markdown" });
+    } catch (e) {
+      console.error(`Failed to send alert to ${user.chat_id}:`, e);
+    }
+    if (users.length > 1) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 Deno.serve(async (req) => {
+  const authHeader = req.headers.get("Authorization");
+  const token = authHeader?.replace(/^Bearer\s+/i, "").trim();
+
+  const isAuthorized = Boolean(
+    (cronSecret && token === cronSecret) ||
+    (!cronSecret && anonKey && token === anonKey) ||
+    (token && (token === cronSecret || token === anonKey))
+  );
+
+  if (!isAuthorized) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401,
+      headers: { "Content-Type": "application/json" },
+    });
+  }
+
   try {
-    // 1. Check 1-Hour PM2.5 Data & Alert (Official NEA 4-Band System)
     let pm25Res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/pm25");
     let pm25Data = await pm25Res.json();
     let pm25Item = pm25Data.data?.items?.[0];
 
-    // If data timestamp is older than 50 minutes (meaning the API refresh is slightly delayed past the top of the hour),
-    // wait 10 seconds and re-fetch once to ensure we get the fresh hour dataset.
     const itemTimestamp = new Date(pm25Item?.timestamp || 0).getTime();
     if (itemTimestamp > 0 && (Date.now() - itemTimestamp) > 50 * 60 * 1000) {
       console.log("NEA API data is lagging; waiting 10s to re-fetch...");
@@ -84,7 +122,6 @@ Deno.serve(async (req) => {
     const peak1hPm25 = topRegion.val;
     const peakBand = topRegion.bandInfo;
 
-    // Send alerts if Peak 1-hour PM2.5 > 55 µg/m³ (Band 2 Elevated or higher)
     if (peak1hPm25 > 55) {
       const { data: psiUsers } = await supabase
         .from('user_subscriptions')
@@ -93,7 +130,7 @@ Deno.serve(async (req) => {
         
       if (psiUsers && psiUsers.length > 0) {
         const regionalBreakdown = regionPm25List
-          .map(r => `• *${r.name}:* *${r.val} µg/m³* — ${r.bandInfo.name} ${r.bandInfo.emoji}`)
+          .map(r => `• *${escapeMd(r.name)}:* *${escapeMd(r.val)} µg/m³* — ${escapeMd(r.bandInfo.name)} ${r.bandInfo.emoji}`)
           .join("\n");
 
         const readingTime = pm25Item?.timestamp ? new Date(pm25Item.timestamp).toLocaleTimeString("en-SG", {
@@ -105,26 +142,20 @@ Deno.serve(async (req) => {
 
         const msg = 
           `🚨 *SINGAPORE 1-HOUR PM2.5 / HAZE WARNING* 🚨\n\n` +
-          `Peak 1-Hour PM2.5 has reached *${peak1hPm25} µg/m³* (*${peakBand.name}* ${peakBand.emoji}) in the *${topRegion.name}* region.\n\n` +
+          `Peak 1-Hour PM2.5 has reached *${escapeMd(peak1hPm25)} µg/m³* (*${escapeMd(peakBand.name)}* ${peakBand.emoji}) in the *${escapeMd(topRegion.name)}* region.\n\n` +
           `🗺️ *Regional Breakdown (Official NEA Bands):*\n` +
           `${regionalBreakdown}\n\n` +
-          `💡 *Health Advisory:* ${peakBand.advisory}\n` +
-          (readingTime ? `🕒 *Reading Time:* ${readingTime}\n\n` : '\n') +
+          `💡 *Health Advisory:* ${escapeMd(peakBand.advisory)}\n` +
+          (readingTime ? `🕒 *Reading Time:* ${escapeMd(readingTime)}\n\n` : '\n') +
           `_Live source: NEA (haze.gov.sg)_`;
-        for (const user of psiUsers) {
-          try {
-            await bot.api.sendMessage(user.chat_id, msg, { parse_mode: "Markdown" });
-          } catch (e) {
-            console.error(`Failed to send PM2.5 alert to ${user.chat_id}`, e);
-          }
-        }
+
+        await sendBroadcast(psiUsers, msg);
       }
     }
 
-    // 2. Check 2-Hour Rain / Storm Nowcast & Alert
     const nowcastRes = await fetch("https://api-open.data.gov.sg/v2/real-time/api/two-hr-forecast");
     const nowcastData = await nowcastRes.json();
-    const item = nowcastData.data.items[0];
+    const item = nowcastData.data?.items?.[0];
     const forecasts = item?.forecasts ?? [];
     const validPeriod = item?.valid_period?.text ?? "Next 2 hours";
 
@@ -140,27 +171,20 @@ Deno.serve(async (req) => {
         .eq('rain_alert', true);
 
       if (rainUsers && rainUsers.length > 0) {
-        const sampleAreas = rainTowns.slice(0, 8).map((t: any) => `• *${t.area}:* ${t.forecast}`).join("\n");
+        const sampleAreas = rainTowns.slice(0, 8).map((t: any) => `• *${escapeMd(t.area)}:* ${escapeMd(t.forecast)}`).join("\n");
         const extraCount = rainTowns.length > 8 ? `\n_...and ${rainTowns.length - 8} more areas._` : "";
         
         const msg = 
           `🌧️ *HEAVY RAIN / SHOWERS ALERT* 🌧️\n\n` +
           `Rain or thundery showers detected in *${rainTowns.length}* areas across Singapore:\n\n` +
           `${sampleAreas}${extraCount}\n\n` +
-          `⏰ *Valid Period:* ${validPeriod}\n` +
+          `⏰ *Valid Period:* ${escapeMd(validPeriod)}\n` +
           `💡 *Precaution:* Bring an umbrella and expect reduced visibility and slippery roads.`;
 
-        for (const user of rainUsers) {
-          try {
-            await bot.api.sendMessage(user.chat_id, msg, { parse_mode: "Markdown" });
-          } catch (e) {
-            console.error(`Failed to send Rain alert to ${user.chat_id}`, e);
-          }
-        }
+        await sendBroadcast(rainUsers, msg);
       }
     }
     
-    // 3. Check High-Risk Dengue Clusters & Alert
     let highRiskCount = 0;
     try {
       const dengueRes = await fetch("https://www.nea.gov.sg/api/OneMap/GetMapData/DENGUE_CLUSTER");
@@ -168,7 +192,6 @@ Deno.serve(async (req) => {
       const parsedDengue = typeof dengueJson === "string" ? JSON.parse(dengueJson) : dengueJson;
       const rawClusters = (parsedDengue.SrchResults || []).slice(1);
 
-      // Filter clusters with >= 10 cases (NEA Red Alert / High Risk)
       const highRisk = rawClusters
         .filter((c: any) => parseInt(c.CASE_SIZE || "0", 10) >= 10)
         .sort((a: any, b: any) => parseInt(b.CASE_SIZE || "0", 10) - parseInt(a.CASE_SIZE || "0", 10));
@@ -183,7 +206,7 @@ Deno.serve(async (req) => {
 
         if (dengueUsers && dengueUsers.length > 0) {
           const clusterList = highRisk.slice(0, 4).map((c: any) => 
-            `• 🔴 *${c.DESCRIPTION}*\n  ⚠️ *${c.CASE_SIZE} cases* | Breeding: _${c.HOMES || "Common areas"}_`
+            `• 🔴 *${escapeMd(c.DESCRIPTION || "Dengue Cluster")}*\n  ⚠️ *${escapeMd(c.CASE_SIZE || "0")} cases* | Breeding: _${escapeMd(c.HOMES || "Common areas")}_`
           ).join("\n\n");
 
           const extraInfo = highRisk.length > 4 ? `\n\n_...plus ${highRisk.length - 4} more high-risk clusters._` : "";
@@ -199,13 +222,7 @@ Deno.serve(async (req) => {
             `• *C*hange water in vases\n` +
             `• *K*eep roof gutters clear`;
 
-          for (const user of dengueUsers) {
-            try {
-              await bot.api.sendMessage(user.chat_id, dengueMsg, { parse_mode: "Markdown" });
-            } catch (e) {
-              console.error(`Failed to send Dengue alert to ${user.chat_id}`, e);
-            }
-          }
+          await sendBroadcast(dengueUsers, dengueMsg);
         }
       }
     } catch (dErr) {
@@ -222,7 +239,10 @@ Deno.serve(async (req) => {
       headers: { "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error(err);
-    return new Response(String(err), { status: 500 });
+    console.error("Cron execution error:", err);
+    return new Response(JSON.stringify({ success: false, error: "Internal Server Error" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 });
