@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta http-equiv="X-Content-Type-Options" content="nosniff">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' https: data: blob:;">
   <title>Singapore Meteorological Live Hub</title>
   
   <!-- Tailwind CSS -->
@@ -11,6 +14,9 @@
   <!-- Leaflet Map CSS & JS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  
+  <!-- Chart.js for 24h Trend Curves -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   
   <!-- Telegram Web App SDK -->
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
@@ -217,6 +223,66 @@
         </div>
       </div>
 
+      <!-- 24-Hour Air Quality & PM2.5 Trend Chart -->
+      <details class="group bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden transition" id="pm25-trend-disclosure" open>
+        <summary class="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-slate-50/70 transition">
+          <div class="flex items-center gap-2.5">
+            <span class="text-xl">📈</span>
+            <div>
+              <span class="text-xs font-bold text-slate-800 uppercase tracking-wider block">24-Hour PM2.5 Trend Curve</span>
+              <span class="text-[10px] text-slate-400 font-medium">Rolling historical air quality trajectory</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="trend-summary-badge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">Loading...</span>
+            <svg class="w-4 h-4 text-slate-400 transition-transform duration-200 group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </summary>
+
+        <div class="px-4 pb-4 pt-1 space-y-3">
+          <!-- Quick Stats Grid -->
+          <div class="grid grid-cols-3 gap-2 text-center">
+            <div class="p-2 rounded-xl bg-slate-50 border border-slate-100">
+              <span class="text-[9px] uppercase font-bold text-slate-400 block">24h Peak</span>
+              <span id="stat-24h-peak" class="text-sm font-extrabold text-slate-800">--</span>
+            </div>
+            <div class="p-2 rounded-xl bg-slate-50 border border-slate-100">
+              <span class="text-[9px] uppercase font-bold text-slate-400 block">24h Low</span>
+              <span id="stat-24h-low" class="text-sm font-extrabold text-slate-800">--</span>
+            </div>
+            <div class="p-2 rounded-xl bg-slate-50 border border-slate-100">
+              <span class="text-[9px] uppercase font-bold text-slate-400 block">Trajectory</span>
+              <span id="stat-24h-direction" class="text-sm font-extrabold text-slate-800">--</span>
+            </div>
+          </div>
+
+          <!-- Region Filter Pills -->
+          <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5" id="pm25-chart-region-selector">
+            <button data-region="peak" class="pm25-region-pill active px-2.5 py-1 rounded-lg text-[11px] font-bold bg-blue-600 text-white shadow-2xs transition">Peak</button>
+            <button data-region="central" class="pm25-region-pill px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200/60 transition">Central</button>
+            <button data-region="north" class="pm25-region-pill px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200/60 transition">North</button>
+            <button data-region="south" class="pm25-region-pill px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200/60 transition">South</button>
+            <button data-region="east" class="pm25-region-pill px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200/60 transition">East</button>
+            <button data-region="west" class="pm25-region-pill px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200/60 transition">West</button>
+          </div>
+
+          <!-- Canvas Container -->
+          <div class="relative w-full h-[220px]">
+            <canvas id="pm25TrendCanvas"></canvas>
+          </div>
+
+          <!-- NEA Bands Legend -->
+          <div class="flex flex-wrap items-center justify-between gap-1 pt-2 border-t border-slate-100 text-[10px] text-slate-500 font-medium">
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-500"></span> Normal (&le;55)</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-500"></span> Elevated (56-150)</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-rose-500"></span> High (151-250)</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-purple-600"></span> Very High (&gt;250)</span>
+          </div>
+        </div>
+      </details>
+
     </div>
 
     <!-- TAB 2: DECLUTTERED TOWN WEATHER (47 TOWNS) -->
@@ -302,6 +368,38 @@
           </div>
         </div>
       </div>
+
+      <!-- 24-Hour Temperature & Humidity Curve -->
+      <details class="group bg-white rounded-2xl shadow-sm border border-slate-200/80 overflow-hidden transition" id="weather-trend-disclosure" open>
+        <summary class="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-slate-50/70 transition">
+          <div class="flex items-center gap-2.5">
+            <span class="text-xl">🌡️</span>
+            <div>
+              <span class="text-xs font-bold text-slate-800 uppercase tracking-wider block">24-Hour Temperature & Humidity Curve</span>
+              <span class="text-[10px] text-slate-400 font-medium">Islandwide station sensor diurnal cycle</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span id="weather-trend-summary-badge" class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">Loading...</span>
+            <svg class="w-4 h-4 text-slate-400 transition-transform duration-200 group-open:rotate-180" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </summary>
+
+        <div class="px-4 pb-4 pt-1 space-y-3">
+          <!-- Canvas Container -->
+          <div class="relative w-full h-[210px]">
+            <canvas id="weatherTrendCanvas"></canvas>
+          </div>
+
+          <!-- Dual-Axis Legend -->
+          <div class="flex items-center justify-center gap-6 pt-2 border-t border-slate-100 text-[10px] font-bold text-slate-600">
+            <span class="flex items-center gap-1.5"><span class="w-3 h-1 bg-rose-500 rounded"></span> Temperature (°C)</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-1 bg-sky-500 rounded"></span> Relative Humidity (%)</span>
+          </div>
+        </div>
+      </details>
 
       <!-- Sunrise & Sunset -->
       <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-200/80 space-y-3">
@@ -431,6 +529,17 @@
       tg.ready();
     }
 
+    // ── Security Helpers ────────────────────────────────────────────────────────
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     // ── Global State & Regions Mapping ──────────────────────────────────────────
     let map = null;
     let psiLayerGroup = null;
@@ -440,6 +549,13 @@
     let currentMapLayer = 'psi';
     let globalTowns = [];
     let selectedRegionFilter = 'all';
+
+    // ── Trend Charts State ──────────────────────────────────────────────────────
+    let pm25ChartInstance = null;
+    let globalPm25TrendData = [];
+    let currentChartRegion = 'peak';
+    let weatherChartInstance = null;
+    let globalWeatherTrendData = { labels: [], temps: [], humids: [] };
 
     // 47 Towns mapped to Singapore 5 Regions
     const TOWN_REGIONS = {
@@ -624,6 +740,12 @@
           if (t === 'dengue') {
             switchMapLayer('dengue');
           }
+          if (t === 'psi') {
+            setTimeout(() => { pm25ChartInstance?.resize(); }, 60);
+          }
+          if (t === 'forecast') {
+            setTimeout(() => { weatherChartInstance?.resize(); }, 60);
+          }
         } else {
           content.classList.add('hidden');
           btn.className = "tab-pill px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap bg-white text-slate-600 border border-slate-200/80 shadow-xs transition";
@@ -645,7 +767,9 @@
           loadUvData(),
           loadDengueData(),
           loadRainfallData(),
-          loadTidesData()
+          loadTidesData(),
+          loadPm25TrendData(),
+          loadWeatherTrendData()
         ]);
         document.getElementById('last-updated').textContent = new Date().toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit', hour12: true });
         updateFavoriteCard();
@@ -756,6 +880,230 @@
       document.getElementById('co-stat').textContent = (co.central || '--');
     }
 
+    // ── 1B. 24-Hour PM2.5 Trend Data & Chart ────────────────────────────────────
+    async function loadPm25TrendData() {
+      const badge = document.getElementById('trend-summary-badge');
+      try {
+        const now = new Date();
+        const todayStr = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
+        const yestDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        const yestStr = yestDate.toLocaleDateString('en-CA', { timeZone: 'Asia/Singapore' });
+
+        const [todayRes, yestRes] = await Promise.all([
+          fetch(`https://api-open.data.gov.sg/v2/real-time/api/pm25?date=${todayStr}`).then(r => r.json()).catch(() => null),
+          fetch(`https://api-open.data.gov.sg/v2/real-time/api/pm25?date=${yestStr}`).then(r => r.json()).catch(() => null)
+        ]);
+
+        const allItems = [...(yestRes?.data?.items || []), ...(todayRes?.data?.items || [])];
+        if (allItems.length === 0) {
+          if (badge) badge.textContent = "Data Unavailable";
+          return;
+        }
+
+        // Deduplicate timestamps and sort chronologically
+        const seen = new Set();
+        const uniqueItems = [];
+        allItems.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        for (const item of allItems) {
+          if (!seen.has(item.timestamp) && item.readings?.pm25_one_hourly) {
+            seen.add(item.timestamp);
+            uniqueItems.push(item);
+          }
+        }
+
+        // Sliced to rolling 24 hours
+        const rolling24 = uniqueItems.slice(-24);
+
+        globalPm25TrendData = rolling24.map(item => {
+          const readings = item.readings.pm25_one_hourly;
+          const peak = Math.max(
+            readings.central || 0,
+            readings.north || 0,
+            readings.south || 0,
+            readings.east || 0,
+            readings.west || 0
+          );
+          const d = new Date(item.timestamp);
+          const timeLabel = d.toLocaleTimeString('en-SG', { hour: 'numeric', hour12: true, timeZone: 'Asia/Singapore' });
+          return {
+            timestamp: item.timestamp,
+            timeLabel,
+            central: readings.central || 0,
+            north: readings.north || 0,
+            south: readings.south || 0,
+            east: readings.east || 0,
+            west: readings.west || 0,
+            peak
+          };
+        });
+
+        updatePm25TrendStats(currentChartRegion);
+        renderPm25TrendChart(currentChartRegion);
+      } catch (err) {
+        console.error("PM2.5 trend load error:", err);
+        if (badge) badge.textContent = "Trend Unavailable";
+      }
+    }
+
+    function updatePm25TrendStats(region) {
+      if (!globalPm25TrendData || globalPm25TrendData.length === 0) return;
+
+      const getVal = (item) => {
+        if (region === 'peak') return item.peak;
+        return item[region] !== undefined ? item[region] : item.peak;
+      };
+
+      const values = globalPm25TrendData.map(getVal);
+      const peak = Math.max(...values);
+      const low = Math.min(...values);
+
+      const latest = values[values.length - 1];
+      const prevIdx = Math.max(0, values.length - 4);
+      const prev = values[prevIdx];
+      const diff = latest - prev;
+
+      let trajectoryText = 'Stable ➡️';
+      let trajectoryClass = 'text-slate-700';
+      if (diff >= 3) {
+        trajectoryText = `Rising +${diff} ↗️`;
+        trajectoryClass = 'text-rose-600 font-black';
+      } else if (diff <= -3) {
+        trajectoryText = `Falling ${diff} ↘️`;
+        trajectoryClass = 'text-emerald-600 font-black';
+      }
+
+      const peakEl = document.getElementById('stat-24h-peak');
+      const lowEl = document.getElementById('stat-24h-low');
+      const dirEl = document.getElementById('stat-24h-direction');
+      const badge = document.getElementById('trend-summary-badge');
+
+      if (peakEl) peakEl.textContent = `${peak} µg/m³`;
+      if (lowEl) lowEl.textContent = `${low} µg/m³`;
+      if (dirEl) {
+        dirEl.textContent = trajectoryText;
+        dirEl.className = `text-xs font-extrabold ${trajectoryClass}`;
+      }
+
+      if (badge) {
+        const band = getPm25Band(latest);
+        const regionLabel = region === 'peak' ? 'Peak' : (region.charAt(0).toUpperCase() + region.slice(1));
+        badge.textContent = `${regionLabel}: ${latest} µg/m³ (${band.descriptor})`;
+        badge.className = `px-2 py-0.5 rounded-full text-[10px] font-bold border ${band.badgeClass}`;
+      }
+    }
+
+    function renderPm25TrendChart(region) {
+      const canvas = document.getElementById('pm25TrendCanvas');
+      if (!canvas || typeof Chart === 'undefined') return;
+      if (!globalPm25TrendData || globalPm25TrendData.length === 0) return;
+
+      const labels = globalPm25TrendData.map(d => d.timeLabel);
+      const values = globalPm25TrendData.map(d => {
+        if (region === 'peak') return d.peak;
+        return d[region] !== undefined ? d[region] : d.peak;
+      });
+
+      const pointColors = values.map(v => {
+        if (v <= 55) return '#10b981'; // emerald-500
+        if (v <= 150) return '#f97316'; // orange-500
+        if (v <= 250) return '#ef4444'; // rose-500
+        return '#8b5cf6'; // purple-500
+      });
+
+      const maxVal = Math.max(...values, 55);
+      const suggestedMax = Math.ceil(maxVal * 1.15);
+
+      const ctx = canvas.getContext('2d');
+      const gradient = ctx.createLinearGradient(0, 0, 0, 200);
+      gradient.addColorStop(0, 'rgba(59, 130, 246, 0.22)');
+      gradient.addColorStop(1, 'rgba(59, 130, 246, 0.01)');
+
+      if (pm25ChartInstance) {
+        pm25ChartInstance.data.labels = labels;
+        pm25ChartInstance.data.datasets[0].data = values;
+        pm25ChartInstance.data.datasets[0].pointBackgroundColor = pointColors;
+        pm25ChartInstance.data.datasets[0].pointBorderColor = pointColors;
+        pm25ChartInstance.options.scales.y.suggestedMax = suggestedMax;
+        pm25ChartInstance.update();
+        return;
+      }
+
+      pm25ChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: '1-Hour PM2.5 (µg/m³)',
+            data: values,
+            borderColor: '#2563eb',
+            borderWidth: 2.2,
+            backgroundColor: gradient,
+            fill: true,
+            tension: 0.35,
+            pointRadius: 3.5,
+            pointHoverRadius: 6,
+            pointBackgroundColor: pointColors,
+            pointBorderColor: pointColors
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'index',
+            intersect: false
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: 'rgba(15, 23, 42, 0.92)',
+              titleFont: { size: 11, weight: 'bold' },
+              bodyFont: { size: 11 },
+              padding: 8,
+              cornerRadius: 8,
+              callbacks: {
+                label: function(context) {
+                  const val = context.parsed.y;
+                  const band = getPm25Band(val);
+                  return `PM2.5: ${val} µg/m³ (${band.name})`;
+                }
+              }
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              suggestedMax: suggestedMax,
+              grid: {
+                color: '#f1f5f9',
+                drawBorder: false
+              },
+              ticks: {
+                font: { size: 10 },
+                color: '#64748b'
+              },
+              title: {
+                display: true,
+                text: 'µg/m³',
+                font: { size: 9, weight: 'bold' },
+                color: '#94a3b8'
+              }
+            },
+            x: {
+              grid: { display: false },
+              ticks: {
+                font: { size: 9 },
+                color: '#64748b',
+                maxRotation: 0,
+                autoSkip: true,
+                maxTicksLimit: 8
+              }
+            }
+          }
+        }
+      });
+    }
+
     // 2. 2-Hour Nowcasts (Decluttered Clean Pins & Groups)
     async function loadNowcastData() {
       const res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/two-hr-forecast");
@@ -859,14 +1207,14 @@
             <div class="bg-slate-50/80 hover:bg-slate-50 p-2.5 rounded-xl border border-slate-100 flex items-center justify-between transition">
               <div class="truncate mr-2">
                 <div class="flex items-center gap-1.5">
-                  <span class="text-xs font-bold text-slate-800 truncate">${t.name}</span>
-                  <span class="text-[9px] font-bold text-slate-400 uppercase bg-slate-200/60 px-1.5 py-0.2 rounded-md">${t.region}</span>
+                  <span class="text-xs font-bold text-slate-800 truncate">${escapeHtml(t.name)}</span>
+                  <span class="text-[9px] font-bold text-slate-400 uppercase bg-slate-200/60 px-1.5 py-0.2 rounded-md">${escapeHtml(t.region)}</span>
                 </div>
-                <span class="text-[11px] text-slate-500 truncate block mt-0.5">${t.forecast}</span>
+                <span class="text-[11px] text-slate-500 truncate block mt-0.5">${escapeHtml(t.forecast)}</span>
               </div>
               <div class="flex items-center gap-2 shrink-0">
-                <span class="text-xl">${t.emoji}</span>
-                <button onclick="setFavoriteTown('${t.name}')" class="text-sm ${isFav ? 'text-amber-400 scale-110' : 'text-slate-300 hover:text-amber-400'} transition" title="Pin as favorite">
+                <span class="text-xl">${escapeHtml(t.emoji)}</span>
+                <button data-town="${escapeHtml(t.name)}" class="pin-fav-btn text-sm ${isFav ? 'text-amber-400 scale-110' : 'text-slate-300 hover:text-amber-400'} transition" title="Pin as favorite">
                   ★
                 </button>
               </div>
@@ -971,6 +1319,230 @@
       document.getElementById('four-day-container').innerHTML = fourDayHtml;
     }
 
+    // ── 3B. 24-Hour Temperature & Humidity Curve ───────────────────────────────
+    async function loadWeatherTrendData() {
+      const badge = document.getElementById('weather-trend-summary-badge');
+      try {
+        const now = new Date();
+        const sgToday = now.toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+        const yest = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        const sgYest = yest.toLocaleDateString("en-CA", { timeZone: "Asia/Singapore" });
+
+        async function fetchHourlySeries(endpoint, date) {
+          try {
+            const res = await fetch(`https://api.data.gov.sg/v1/environment/${endpoint}?date=${date}`);
+            const json = await res.json();
+            const items = json.items || [];
+            const hourly = new Map();
+            items.forEach(it => {
+              const d = new Date(it.timestamp);
+              const hourKey = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()} ${d.getHours()}`;
+              if (!hourly.has(hourKey) || Math.abs(d.getMinutes()) < Math.abs(new Date(hourly.get(hourKey).timestamp).getMinutes())) {
+                hourly.set(hourKey, it);
+              }
+            });
+            return Array.from(hourly.values());
+          } catch (e) {
+            console.warn(`Hourly ${endpoint} error for ${date}:`, e);
+            return [];
+          }
+        }
+
+        let [tToday, hToday] = await Promise.all([
+          fetchHourlySeries('air-temperature', sgToday),
+          fetchHourlySeries('relative-humidity', sgToday)
+        ]);
+
+        let tItems = tToday;
+        let hItems = hToday;
+
+        if (tToday.length < 20) {
+          const [tYest, hYest] = await Promise.all([
+            fetchHourlySeries('air-temperature', sgYest),
+            fetchHourlySeries('relative-humidity', sgYest)
+          ]);
+          tItems = [...tYest, ...tToday];
+          hItems = [...hYest, ...hToday];
+        }
+
+        tItems.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        hItems.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+        const rollingT = tItems.slice(-24);
+        const rollingH = hItems.slice(-24);
+
+        if (rollingT.length === 0) {
+          if (badge) badge.textContent = "Data Unavailable";
+          return;
+        }
+
+        const labels = [];
+        const temps = [];
+        const humids = [];
+
+        rollingT.forEach((tItem, idx) => {
+          const d = new Date(tItem.timestamp);
+          const label = d.toLocaleTimeString('en-SG', { hour: 'numeric', hour12: true, timeZone: 'Asia/Singapore' });
+          labels.push(label);
+
+          const tReadings = tItem.readings || [];
+          const avgTemp = tReadings.length > 0 
+            ? +(tReadings.reduce((s, r) => s + r.value, 0) / tReadings.length).toFixed(1)
+            : 0;
+          temps.push(avgTemp);
+
+          const hItem = rollingH.find(h => Math.abs(new Date(h.timestamp) - d) < 30 * 60 * 1000) || rollingH[idx];
+          const hReadings = hItem?.readings || [];
+          const avgHum = hReadings.length > 0
+            ? Math.round(hReadings.reduce((s, r) => s + r.value, 0) / hReadings.length)
+            : 0;
+          humids.push(avgHum);
+        });
+
+        globalWeatherTrendData = { labels, temps, humids };
+
+        if (badge && temps.length > 0) {
+          const latestT = temps[temps.length - 1];
+          const latestH = humids[humids.length - 1];
+          badge.textContent = `Now: ${latestT}°C · ${latestH}% RH`;
+          badge.className = "px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200";
+        }
+
+        renderWeatherTrendChart();
+      } catch (err) {
+        console.error("Weather trend load error:", err);
+        if (badge) badge.textContent = "Curve Unavailable";
+      }
+    }
+
+    function renderWeatherTrendChart() {
+      const canvas = document.getElementById('weatherTrendCanvas');
+      if (!canvas || typeof Chart === 'undefined') return;
+      if (!globalWeatherTrendData || globalWeatherTrendData.labels.length === 0) return;
+
+      const ctx = canvas.getContext('2d');
+      const { labels, temps, humids } = globalWeatherTrendData;
+
+      if (weatherChartInstance) {
+        weatherChartInstance.data.labels = labels;
+        weatherChartInstance.data.datasets[0].data = temps;
+        weatherChartInstance.data.datasets[1].data = humids;
+        weatherChartInstance.update();
+        return;
+      }
+
+      weatherChartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Temperature (°C)',
+              data: temps,
+              yAxisID: 'yTemp',
+              borderColor: '#f43f5e',
+              borderWidth: 2.2,
+              tension: 0.35,
+              pointRadius: 2.5,
+              pointHoverRadius: 5,
+              pointBackgroundColor: '#f43f5e',
+              pointBorderColor: '#fff',
+              fill: false
+            },
+            {
+              label: 'Relative Humidity (%)',
+              data: humids,
+              yAxisID: 'yHum',
+              borderColor: '#0ea5e9',
+              borderWidth: 2,
+              borderDash: [3, 3],
+              tension: 0.35,
+              pointRadius: 2.5,
+              pointHoverRadius: 5,
+              pointBackgroundColor: '#0ea5e9',
+              pointBorderColor: '#fff',
+              fill: false
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'index',
+            intersect: false
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: 'rgba(15, 23, 42, 0.92)',
+              titleFont: { size: 11, weight: 'bold' },
+              bodyFont: { size: 11 },
+              padding: 8,
+              cornerRadius: 8,
+              callbacks: {
+                label: function(context) {
+                  const isTemp = context.datasetIndex === 0;
+                  return `${context.dataset.label}: ${context.parsed.y}${isTemp ? '°C' : '%'}`;
+                }
+              }
+            }
+          },
+          scales: {
+            yTemp: {
+              type: 'linear',
+              position: 'left',
+              suggestedMin: 22,
+              suggestedMax: 35,
+              grid: {
+                color: '#f1f5f9',
+                drawBorder: false
+              },
+              ticks: {
+                font: { size: 9 },
+                color: '#f43f5e',
+                callback: (v) => v + '°'
+              },
+              title: {
+                display: true,
+                text: '°C',
+                font: { size: 9, weight: 'bold' },
+                color: '#f43f5e'
+              }
+            },
+            yHum: {
+              type: 'linear',
+              position: 'right',
+              suggestedMin: 50,
+              suggestedMax: 100,
+              grid: { display: false },
+              ticks: {
+                font: { size: 9 },
+                color: '#0ea5e9',
+                callback: (v) => v + '%'
+              },
+              title: {
+                display: true,
+                text: '%',
+                font: { size: 9, weight: 'bold' },
+                color: '#0ea5e9'
+              }
+            },
+            x: {
+              grid: { display: false },
+              ticks: {
+                font: { size: 9 },
+                color: '#64748b',
+                maxRotation: 0,
+                autoSkip: true,
+                maxTicksLimit: 8
+              }
+            }
+          }
+        }
+      });
+    }
+
     // 4. UV Index
     async function loadUvData() {
       const res = await fetch("https://api-open.data.gov.sg/v2/real-time/api/uv");
@@ -1068,13 +1640,13 @@
                   ${isHighRisk ? '🚨 High Risk (Red)' : '⚠️ Alert (Yellow)'}
                 </span>
                 <span class="px-2 py-0.5 rounded-full text-[10px] font-black ${isHighRisk ? 'bg-rose-600 text-white' : 'bg-amber-400 text-slate-950'}">
-                  ${cases} Cases
+                  ${Number(cases)} Cases
                 </span>
               </div>
-              <p class="text-xs font-bold text-slate-800 leading-snug">${locality}</p>
-              ${props.homes ? `<p class="text-[10px] text-slate-600">🏠 <strong>Homes:</strong> ${props.homes}</p>` : ''}
-              ${props.public_places ? `<p class="text-[10px] text-slate-600">🌳 <strong>Public:</strong> ${props.public_places}</p>` : ''}
-              ${props.construction_sites ? `<p class="text-[10px] text-slate-600">🏗️ <strong>Sites:</strong> ${props.construction_sites}</p>` : ''}
+              <p class="text-xs font-bold text-slate-800 leading-snug">${escapeHtml(locality)}</p>
+              ${props.homes ? `<p class="text-[10px] text-slate-600">🏠 <strong>Homes:</strong> ${escapeHtml(props.homes)}</p>` : ''}
+              ${props.public_places ? `<p class="text-[10px] text-slate-600">🌳 <strong>Public:</strong> ${escapeHtml(props.public_places)}</p>` : ''}
+              ${props.construction_sites ? `<p class="text-[10px] text-slate-600">🏗️ <strong>Sites:</strong> ${escapeHtml(props.construction_sites)}</p>` : ''}
             </div>
           `;
 
@@ -1099,7 +1671,7 @@
                 className: '',
                 html: `<div class="rounded-full px-2.5 py-1 text-xs font-black flex items-center gap-1.5 border-2 border-white cursor-pointer hover:scale-110 transition-transform select-none" style="background-color: ${badgeBg}; color: ${badgeText}; box-shadow: 0 4px 10px rgba(0,0,0,0.35); transform: translate(-50%, -50%);">
                   <span class="text-[12px] leading-none">🦟</span>
-                  <span class="font-black text-[11px] leading-none tracking-tight">${cases}</span>
+                  <span class="font-black text-[11px] leading-none tracking-tight">${Number(cases)}</span>
                 </div>`,
                 iconSize: [0, 0]
               });
@@ -1155,14 +1727,14 @@
         html += `
           <div class="p-3 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-100 transition space-y-1.5">
             <div class="flex items-start justify-between gap-2">
-              <span class="text-xs font-bold text-slate-800 leading-snug flex-1">${locality}</span>
+              <span class="text-xs font-bold text-slate-800 leading-snug flex-1">${escapeHtml(locality)}</span>
               <span class="shrink-0 px-2 py-0.5 rounded-full text-[10px] font-extrabold text-white ${isHigh ? 'bg-rose-600' : 'bg-amber-500'}">
-                ${cases} cases
+                ${Number(cases)} cases
               </span>
             </div>
             <div class="flex items-center justify-between pt-1 border-t border-slate-200/60 text-[10px] text-slate-500">
               <span>${isHigh ? '🔴 High Risk Cluster' : '🟡 Surveillance Area'}</span>
-              <button onclick="focusDengueCluster('${locality.replace(/'/g, "\\'")}')" class="text-rose-600 font-bold hover:underline flex items-center gap-0.5">
+              <button data-locality="${escapeHtml(locality)}" class="focus-dengue-btn text-rose-600 font-bold hover:underline flex items-center gap-0.5">
                 <span>📍 View on Map</span>
               </button>
             </div>
@@ -1483,6 +2055,58 @@
     }
 
     window.addEventListener('DOMContentLoaded', () => {
+      // Event delegation for pinned favorite towns (avoids inline JS injection)
+      document.getElementById('towns-clean-list')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.pin-fav-btn');
+        if (btn) {
+          const town = btn.getAttribute('data-town');
+          if (town) setFavoriteTown(town);
+        }
+      });
+
+      // Event delegation for dengue cluster map focus (avoids inline JS injection)
+      document.getElementById('dengue-clusters-list')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.focus-dengue-btn');
+        if (btn) {
+          const loc = btn.getAttribute('data-locality');
+          if (loc) focusDengueCluster(loc);
+        }
+      });
+
+      // Event delegation for PM2.5 trend region selector pills
+      document.getElementById('pm25-chart-region-selector')?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.pm25-region-pill');
+        if (!btn) return;
+        const region = btn.getAttribute('data-region');
+        if (!region || region === currentChartRegion) return;
+
+        currentChartRegion = region;
+        if (tg?.HapticFeedback) tg.HapticFeedback.selectionChanged();
+
+        document.querySelectorAll('.pm25-region-pill').forEach(b => {
+          if (b.getAttribute('data-region') === region) {
+            b.className = "pm25-region-pill active px-2.5 py-1 rounded-lg text-[11px] font-bold bg-blue-600 text-white shadow-2xs transition";
+          } else {
+            b.className = "pm25-region-pill px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200/60 transition";
+          }
+        });
+
+        updatePm25TrendStats(region);
+        renderPm25TrendChart(region);
+      });
+
+      // Resize charts when disclosures are toggled open
+      document.getElementById('pm25-trend-disclosure')?.addEventListener('toggle', (e) => {
+        if (e.target.open) {
+          setTimeout(() => { pm25ChartInstance?.resize(); }, 60);
+        }
+      });
+      document.getElementById('weather-trend-disclosure')?.addEventListener('toggle', (e) => {
+        if (e.target.open) {
+          setTimeout(() => { weatherChartInstance?.resize(); }, 60);
+        }
+      });
+
       initMap();
       refreshAllData();
     });
