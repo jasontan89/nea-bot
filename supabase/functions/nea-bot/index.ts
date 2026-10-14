@@ -16,6 +16,11 @@ const DASHBOARD_URL = Deno.env.get("NEA_DASHBOARD_URL") ?? "https://jasontan89.g
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
+function escapeMd(text: string | number | undefined | null): string {
+  if (text === null || text === undefined) return "";
+  return String(text).replace(/[_*[\]`]/g, "\\$&");
+}
+
 function getPsiStatus(val: number) {
   if (val <= 50) return "Good 🟢";
   if (val <= 100) return "Moderate 🟡";
@@ -188,7 +193,7 @@ function getMainMenuKeyboard() {
 // ── Commands ─────────────────────────────────────────────────────────────────
 
 bot.command("start", async (ctx) => {
-  const name = ctx.from?.first_name ?? "there";
+  const name = escapeMd(ctx.from?.first_name ?? "there");
   
   // Register user in DB
   if (ctx.from?.id) {
@@ -321,16 +326,16 @@ async function handleForecastRequest(ctx: any) {
 
     let msg = 
       `🌤️ *Singapore 24-Hour Weather Outlook*\n\n` +
-      `*Forecast:* ${emoji} *${forecastText}*\n` +
-      `🌡️ *Temperature:* ${tempLow}°C - ${tempHigh}°C\n` +
-      `💧 *Humidity:* ${humLow}% - ${humHigh}%\n` +
-      `💨 *Wind:* ${general.wind?.direction ?? ""} ${windSpeed}\n\n`;
+      `*Forecast:* ${emoji} *${escapeMd(forecastText)}*\n` +
+      `🌡️ *Temperature:* ${escapeMd(tempLow)}°C - ${escapeMd(tempHigh)}°C\n` +
+      `💧 *Humidity:* ${escapeMd(humLow)}% - ${escapeMd(humHigh)}%\n` +
+      `💨 *Wind:* ${escapeMd(general.wind?.direction ?? "")} ${escapeMd(windSpeed)}\n\n`;
 
     if (outlook4.length > 0) {
       msg += `📅 *4-Day Weather Forecast:*\n`;
       for (const day of outlook4) {
         const dEmoji = getWeatherEmoji(day.forecast?.text ?? "");
-        msg += `• *${day.day}:* ${dEmoji} ${day.forecast?.text ?? "Fair"} (${day.temperature.low}°-${day.temperature.high}°C)\n`;
+        msg += `• *${escapeMd(day.day)}:* ${dEmoji} ${escapeMd(day.forecast?.text ?? "Fair")} (${escapeMd(day.temperature.low)}°-${escapeMd(day.temperature.high)}°C)\n`;
       }
       msg += `\n`;
     }
@@ -366,14 +371,14 @@ async function handleNowcastRequest(ctx: any) {
 
     let msg = 
       `📍 *Singapore 2-Hour Town Nowcast*\n` +
-      `⏰ *Valid Period:* ${period}\n\n`;
+      `⏰ *Valid Period:* ${escapeMd(period)}\n\n`;
 
     for (const f of filtered) {
       const emoji = getWeatherEmoji(f.forecast);
-      msg += `• *${f.area}:* ${emoji} ${f.forecast}\\n`;
+      msg += `• *${escapeMd(f.area)}:* ${emoji} ${escapeMd(f.forecast)}\n`;
     }
 
-    msg += `\\n💡 _Open the interactive map to see all 47 locations islandwide._\n\n`;
+    msg += `\n💡 _Open the interactive map to see all 47 locations islandwide._\n\n`;
     msg += `_Live source: NEA (data.gov.sg)_`;
 
     const kb = new InlineKeyboard()
@@ -414,7 +419,7 @@ async function handleUvRequest(ctx: any) {
       msg += `• ${timeStr}: UV ${item.value}\n`;
     }
 
-    msg += `\\n_Live source: NEA (data.gov.sg)_`;
+    msg += `\n_Live source: NEA (data.gov.sg)_`;
 
     const kb = new InlineKeyboard()
       .webApp("📊 Open Dashboard", DASHBOARD_URL)
@@ -472,7 +477,7 @@ async function handleTidesRequest(ctx: any) {
       msg += `• ${timeStr} — *${typeStr}* (${t.height.toFixed(1)}m)${badge}\n`;
     }
 
-    msg += `\\n💡 *Note:* Heights are above Chart Datum. Essential for fishing, coastal walks & watersports.`;
+    msg += `\n💡 *Note:* Heights are above Chart Datum. Essential for fishing, coastal walks & watersports.`;
 
     const kb = new InlineKeyboard()
       .webApp("📊 Open Dashboard & Tides", DASHBOARD_URL)
@@ -563,22 +568,27 @@ bot.callbackQuery("action_psi", async (ctx) => {
 });
 
 bot.callbackQuery("action_forecast", async (ctx) => {
+  await ctx.answerCallbackQuery();
   await handleForecastRequest(ctx);
 });
 
 bot.callbackQuery("action_nowcast", async (ctx) => {
+  await ctx.answerCallbackQuery();
   await handleNowcastRequest(ctx);
 });
 
 bot.callbackQuery("action_uv", async (ctx) => {
+  await ctx.answerCallbackQuery();
   await handleUvRequest(ctx);
 });
 
 bot.callbackQuery("action_tides", async (ctx) => {
+  await ctx.answerCallbackQuery();
   await handleTidesRequest(ctx);
 });
 
 bot.callbackQuery("action_alerts", async (ctx) => {
+  await ctx.answerCallbackQuery();
   await handleAlertsMenu(ctx);
 });
 
@@ -619,13 +629,25 @@ bot.callbackQuery("toggle_dengue", async (ctx) => {
 });
 
 // ── Serve ─────────────────────────────────────────────────────────────────────
-const handleUpdate = webhookCallback(bot, "std/http");
+const webhookSecret = Deno.env.get("NEA_TELEGRAM_WEBHOOK_SECRET") ?? Deno.env.get("NEA_TELEGRAM_SECRET_TOKEN");
+if (!webhookSecret) {
+  console.warn("WARNING: NEA_TELEGRAM_WEBHOOK_SECRET is not configured. Webhook updates are unauthenticated.");
+}
+
+const handleUpdate = webhookCallback(
+  bot,
+  "std/http",
+  webhookSecret ? { secretToken: webhookSecret } : undefined
+);
 
 Deno.serve(async (req) => {
   try {
     return await handleUpdate(req);
   } catch (err) {
-    console.error(err);
-    return new Response(String(err), { status: 500 });
+    console.error("Bot webhook execution error:", err);
+    return new Response(JSON.stringify({ error: "Internal Server Error" }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 });
